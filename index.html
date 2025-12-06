@@ -2,15 +2,16 @@
 <html lang="ko">
  <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>평균의 수호자: 매스 서바이버</title>
-  <style>
+    <style>
         @import url('https://fonts.googleapis.com/css2?family=Jua&display=swap');
 
         * {
             box-sizing: border-box;
             user-select: none;
             -webkit-user-drag: none;
+            touch-action: manipulation; /* 터치 최적화 */
         }
 
         body {
@@ -23,6 +24,42 @@
             display: flex;
             width: 100vw;
             height: 100vh;
+        }
+
+        /* 반응형 레이아웃 처리 */
+        @media (max-width: 768px) {
+            body {
+                flex-direction: column;
+            }
+            #game-area {
+                height: 60% !important;
+                width: 100% !important;
+            }
+            #sidebar {
+                height: 40% !important;
+                width: 100% !important;
+                min-width: 0 !important;
+                border-left: none !important;
+                border-top: 4px solid #4a5568;
+                padding: 10px !important;
+            }
+            /* 모바일에서 폰트 크기 조정 */
+            .problem-box { font-size: 1rem !important; padding: 10px !important; margin-bottom: 10px !important; }
+            .answer-input { padding: 10px !important; font-size: 1.2rem !important; }
+            .submit-btn { padding: 10px !important; font-size: 1.1rem !important; }
+            
+            /* 모바일에서 UI 위치 조정 */
+            .rank-button { right: 90px !important; bottom: 15px !important; width: 60px !important; height: 60px !important; font-size: 0.8rem !important; }
+            .shop-button { right: 15px !important; bottom: 15px !important; width: 60px !important; height: 60px !important; }
+            .train-button { right: 15px !important; bottom: 90px !important; width: 60px !important; height: 60px !important; font-size: 0.9rem !important; }
+            
+            /* 모바일 통계 패널 간소화 또는 폰트 축소 */
+            .math-stats { font-size: 0.8rem !important; padding: 8px !important; }
+            .stat-row { font-size: 0.8rem !important; margin-bottom: 2px !important; }
+            
+            .skill-dock { bottom: 15px !important; gap: 10px !important; }
+            .skill-slot { width: 50px !important; height: 50px !important; }
+            .skill-slot span { font-size: 18px !important; }
         }
 
         /* === 좌측 게임 영역 === */
@@ -394,13 +431,19 @@
                             ⚔️ 내 공격력: <span id="stat-dmg">25</span> <br>
                             ⚡ 연사속도: <span id="stat-spd">1.25</span>/s <br>
                             🏹 발사체수: <span id="stat-cnt">1</span> <br>
-                            👾 적 공격력: <span id="enemy-dmg" style="color:#f56565">0.5</span>
+                            👾 적 공격력: <span id="enemy-dmg" style="color:#f56565">0.5</span> <br>
+                            ⏳ 최장생존: <span id="max-time" style="color:#ffd700">00:00</span>
                         </div>
                     </div>
                 </div>
                 <div class="currency-display">
                     <span>💰</span><span id="goldDisplay">0</span>
                 </div>
+            </div>
+            
+            <!-- 중앙 상단 타이머 추가 -->
+            <div id="timer-display" style="position:absolute; top:15px; left:50%; transform:translateX(-50%); font-size:2rem; font-weight:bold; text-shadow:0 0 5px black; pointer-events:none;">
+                00:00
             </div>
 
             <div class="skill-dock" id="skillDock">
@@ -499,6 +542,8 @@
                 <button onclick="loadRanking('level')" class="shop-item" style="padding:5px 15px;">레벨순</button>
                 <button onclick="loadRanking('problems')" class="shop-item" style="padding:5px 15px;">문제순</button>
                 <button onclick="loadRanking('combo')" class="shop-item" style="padding:5px 15px;">콤보순</button>
+                <button onclick="loadRanking('survival')" class="shop-item" style="padding:5px 15px;">생존순</button>
+                <button onclick="loadRanking('accuracy')" class="shop-item" style="padding:5px 15px;">정답률순</button>
             </div>
 
             <div id="rank-list-container">로딩중...</div>
@@ -535,6 +580,27 @@
             const storedName = localStorage.getItem('mathHeroName');
             if (storedName) {
                 currentUser = storedName;
+                
+                // 이어하기 데이터 확인
+                if (localStorage.getItem('mathSaveData')) {
+                    if (confirm("저장된 게임이 있습니다. 이어하시겠습니까?")) {
+                        if (game.loadGame()) {
+                            document.getElementById('start-screen').style.display = 'none';
+                            // 오디오 준비
+                            const audioIds = ['bgm', 'sfx-shoot', 'sfx-hit', 'sfx-level', 'sfx-over'];
+                            audioIds.forEach(id => { const a=document.getElementById(id); if(a) a.load(); });
+                            
+                            game.state = 'playing';
+                            game.lastTime = performance.now();
+                            game.loop(game.lastTime);
+                            document.getElementById('bgm').play().catch(()=>{});
+                            return;
+                        }
+                    } else {
+                        // 이어하기 취소 시 데이터 삭제
+                        localStorage.removeItem('mathSaveData');
+                    }
+                }
                 startGame();
             } else {
                 document.getElementById('start-screen').style.display = 'none';
@@ -562,8 +628,10 @@
             const data = {
                 username: currentUser,
                 level: game.player.level,
-                problems: game.stats.correct, // 정답 횟수를 푼 문제 수로 기록
+                problems: game.stats.correct, 
                 maxCombo: game.stats.maxCombo,
+                survivalTime: Math.floor(game.gameTime / 1000),
+                attempts: game.stats.attempts, // 시도 횟수 추가
                 timestamp: new Date().toISOString()
             };
 
@@ -603,17 +671,32 @@
                                 <th>LV</th>
                                 <th>정답</th>
                                 <th>최대콤보</th>
+                                <th>생존</th>
+                                <th>정답률</th>
                             </tr>
                         </thead>
                         <tbody>
                 `;
                 
                 if (data.length === 0) {
-                    html += `<tr><td colspan="5">등록된 랭킹이 없습니다.</td></tr>`;
+                    html += `<tr><td colspan="7">등록된 랭킹이 없습니다.</td></tr>`;
                 } else {
                     data.forEach((row, index) => {
                         const isMe = row.username === currentUser;
-                        const rank = row.rank || (index + 1); // 서버에서 rank를 줄 수도 있고, 아니면 인덱스로
+                        const rank = row.rank || (index + 1);
+                        
+                        // 시간 포맷팅 (초 -> 분:초)
+                        const sec = row.survivalTime || 0;
+                        const min = Math.floor(sec / 60);
+                        const s = sec % 60;
+                        const timeStr = `${min}:${s.toString().padStart(2,'0')}`;
+
+                        // 정답률 계산 (attempts가 없으면 0% 처리)
+                        let acc = 0;
+                        const attempts = row.attempts || 0; // 서버에서 받아야 함
+                        const correct = row.problems || 0;
+                        if (attempts > 0) acc = ((correct / attempts) * 100).toFixed(1);
+
                         html += `
                             <tr class="${isMe ? 'my-rank' : ''}">
                                 <td>${rank}</td>
@@ -621,6 +704,8 @@
                                 <td>${row.level}</td>
                                 <td>${row.problems}</td>
                                 <td>${row.maxCombo}</td>
+                                <td>${timeStr}</td>
+                                <td>${acc}%</td>
                             </tr>
                         `;
                     });
@@ -777,11 +862,22 @@
                     maxCombo: 0
                 };
 
-                // 로컬 스토리지에서 최고 기록 불러오기 (필요시 사용)
+                // 로컬 스토리지에서 최고 기록 불러오기
                 this.highScore = localStorage.getItem('mathHighLv') || 1;
+                this.maxTime = parseFloat(localStorage.getItem('mathMaxTime')) || 0; // ms 단위
 
                 window.addEventListener('resize', () => this.resize());
+                // 페이지 종료 시 저장
+                window.addEventListener('beforeunload', () => this.saveGame());
+                
                 this.resize();
+            }
+
+            formatTime(ms) {
+                const totalSec = Math.floor(ms / 1000);
+                const m = Math.floor(totalSec / 60);
+                const s = totalSec % 60;
+                return `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
             }
 
             resize() {
@@ -1097,6 +1193,10 @@
                 diffEl.innerText = diffText;
                 diffEl.style.color = diffColor;
 
+                // 시간 표시
+                document.getElementById('timer-display').innerText = this.formatTime(this.gameTime);
+                document.getElementById('max-time').innerText = this.formatTime(Math.max(this.gameTime, this.maxTime));
+
                 // 능력치 표시
                 document.getElementById('stat-dmg').innerText = this.player.damage;
                 document.getElementById('stat-spd').innerText = (1000 / this.player.fireRate).toFixed(2);
@@ -1145,11 +1245,68 @@
                 this.state = 'gameover';
                 document.getElementById('sfx-over').play().catch(()=>{});
                 
+                // 최고 기록 갱신 (시간)
+                if (this.gameTime > this.maxTime) {
+                    this.maxTime = this.gameTime;
+                    localStorage.setItem('mathMaxTime', this.maxTime);
+                }
+
                 // 랭킹 전송
                 sendRanking();
                 
-                alert("게임 오버!");
+                // 죽었으므로 저장된 이어하기 데이터 삭제
+                localStorage.removeItem('mathSaveData');
+
+                alert(`게임 오버!\n생존 시간: ${this.formatTime(this.gameTime)}`);
                 location.reload();
+            }
+
+            saveGame() {
+                if (this.state !== 'playing' && this.state !== 'paused') return;
+                
+                const saveData = {
+                    gameTime: this.gameTime,
+                    player: this.player,
+                    gold: this.gold,
+                    skills: this.skills,
+                    stats: this.stats,
+                    spawnRate: this.spawnRate,
+                    // 적들 위치까지 저장하면 좋지만 너무 많으므로 생략하거나 간략히 저장
+                    // 여기서는 적 정보는 초기화하고 난이도(시간)만 유지하는 방식으로 타협할 수도 있지만,
+                    // 정확한 복구를 위해 적 정보도 일부 저장
+                    // 다만 적이 너무 많으면 로컬스토리지 용량 이슈가 있을 수 있음 (텍스트라 괜찮을 듯)
+                    level: this.player.level
+                };
+                localStorage.setItem('mathSaveData', JSON.stringify(saveData));
+            }
+
+            loadGame() {
+                const json = localStorage.getItem('mathSaveData');
+                if (!json) return false;
+                
+                try {
+                    const data = JSON.parse(json);
+                    this.gameTime = data.gameTime || 0;
+                    
+                    // 플레이어 스탯 복구
+                    Object.assign(this.player, data.player);
+                    this.gold = data.gold;
+                    this.skills = data.skills;
+                    Object.assign(this.stats, data.stats);
+                    this.spawnRate = data.spawnRate;
+                    
+                    // HUD 갱신
+                    this.updateHUD();
+                    this.updateSkillDock();
+                    
+                    // 문제 텍스트 갱신 (마지막 레벨 기준 문제 재생성)
+                    this.nextProblem();
+                    
+                    return true;
+                } catch (e) {
+                    console.error("Save file corrupted", e);
+                    return false;
+                }
             }
         }
 
