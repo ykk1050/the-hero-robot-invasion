@@ -465,7 +465,7 @@
 
     <!-- 우측 사이드바 (문제 영역) -->
     <div id="sidebar">
-        <div class="sidebar-header">수학 작전 통제실</div>
+        <div class="sidebar-header">로봇 공격 방어 지원실</div>
         
         <!-- 학습 통계 패널 추가 -->
         <div class="math-stats">
@@ -504,7 +504,7 @@
     <!-- 시작 화면 -->
     <div id="start-screen">
         <h1 style="font-size: 3rem; color: #4fd1c5; text-shadow: 0 0 20px rgba(79,209,197,0.5); margin-bottom: 20px;">
-            평균의 수호자
+            우주의 수호자: Average-Hero
         </h1>
         <p style="color: #cbd5e0; font-size: 1.2rem; margin-bottom: 40px; text-align: center; line-height: 1.6;">
             좌측에서는 전투가, 우측에서는 수학 문제가 진행됩니다.<br>
@@ -539,11 +539,11 @@
             <h2 style="color: #a18cd1; margin-top: 0;">🏆 글로벌 랭킹</h2>
             
             <div style="display:flex; gap:10px; justify-content:center; margin-bottom:15px;">
-                <button onclick="loadRanking('level')" class="shop-item" style="padding:5px 15px;">레벨순</button>
-                <button onclick="loadRanking('problems')" class="shop-item" style="padding:5px 15px;">문제순</button>
-                <button onclick="loadRanking('combo')" class="shop-item" style="padding:5px 15px;">콤보순</button>
-                <button onclick="loadRanking('survival')" class="shop-item" style="padding:5px 15px;">생존순</button>
-                <button onclick="loadRanking('accuracy')" class="shop-item" style="padding:5px 15px;">정답률순</button>
+                <button onclick="loadRanking('level')" class="shop-item" style="padding:5px 15px; color:white;">레벨순</button>
+                <button onclick="loadRanking('problems')" class="shop-item" style="padding:5px 15px; color:white;">문제순</button>
+                <button onclick="loadRanking('combo')" class="shop-item" style="padding:5px 15px; color:white;">콤보순</button>
+                <button onclick="loadRanking('survival')" class="shop-item" style="padding:5px 15px; color:white;">생존순</button>
+                <button onclick="loadRanking('accuracy')" class="shop-item" style="padding:5px 15px; color:white;">정답률순</button>
             </div>
 
             <div id="rank-list-container">로딩중...</div>
@@ -591,8 +591,14 @@
                             audioIds.forEach(id => { const a=document.getElementById(id); if(a) a.load(); });
                             
                             game.state = 'playing';
-                            game.lastTime = performance.now();
-                            game.loop(game.lastTime);
+                            
+                            // 중요: 시간 관련 변수 재설정
+                            const now = performance.now();
+                            game.lastTime = now;
+                            game.player.lastFire = now; // 즉시 발사 가능하도록 설정
+                            game.lastSpawn = now;       // 스폰 타이머도 리셋
+
+                            game.loop(now);
                             document.getElementById('bgm').play().catch(()=>{});
                             return;
                         }
@@ -1435,6 +1441,28 @@
             }
         }
 
+        
+
     </script>
+
+
+
+
+    <!-- 버전 정보 워터마크 -->
+    <div style="
+        position: fixed;
+        bottom: 5px;
+        right: 10px;
+        font-size: 0.7rem;
+        color: rgba(255, 255, 255, 0.3);
+        pointer-events: none;
+        z-index: 9999;
+        text-align: right;
+        font-family: sans-serif;
+    ">
+        the-hero-robot-invasion<br>
+        made by gametudyssam 0.006
+    </div>
+
 </body>
 </html>
