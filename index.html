@@ -1,0 +1,1283 @@
+<!DOCTYPE html>
+<html lang="ko">
+ <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>평균의 수호자: 매스 서바이버</title>
+  <style>
+        @import url('https://fonts.googleapis.com/css2?family=Jua&display=swap');
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-drag: none;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #1a202c;
+            font-family: 'Jua', sans-serif;
+            color: white;
+            display: flex;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* === 좌측 게임 영역 === */
+        #game-area {
+            position: relative;
+            flex-grow: 1;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+        }
+
+        /* UI 오버레이 (체력, 골드, 스킬 등) */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        /* 상단 상태바 */
+        .hud-top {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            pointer-events: auto;
+        }
+
+        .status-bar {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            width: 280px;
+        }
+
+        .bar-container {
+            width: 100%;
+            height: 22px;
+            background: rgba(0, 0, 0, 0.6);
+            border-radius: 11px;
+            border: 2px solid #555;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hp-bar-fill { width: 100%; height: 100%; background: linear-gradient(90deg, #ff4b1f, #ff9068); transition: width 0.2s; }
+        .exp-bar-fill { width: 0%; height: 100%; background: linear-gradient(90deg, #11998e, #38ef7d); transition: width 0.2s; }
+        
+        .bar-text {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            font-size: 13px; text-shadow: 1px 1px 2px black; white-space: nowrap;
+        }
+
+        .currency-display {
+            background: rgba(0, 0, 0, 0.7);
+            padding: 8px 20px;
+            border-radius: 20px;
+            border: 2px solid gold;
+            color: gold;
+            font-size: 1.4rem;
+            display: flex; align-items: center; gap: 10px;
+        }
+
+        /* 하단 스킬 슬롯 */
+        .skill-dock {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 15px;
+            pointer-events: auto;
+        }
+
+        .skill-slot {
+            width: 70px; height: 70px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid #777;
+            border-radius: 12px;
+            display: flex; justify-content: center; align-items: center;
+            cursor: pointer;
+            position: relative;
+            transition: transform 0.1s;
+        }
+        .skill-slot:active { transform: scale(0.95); }
+        .skill-slot.active { border-color: #00ff00; box-shadow: 0 0 15px #00ff00; }
+        .skill-slot.empty { opacity: 0.5; cursor: default; }
+
+        .skill-count { position: absolute; bottom: 2px; right: 6px; font-size: 16px; color: white; }
+        .skill-key { position: absolute; top: 2px; left: 6px; font-size: 11px; color: #aaa; }
+
+        /* 상태바 확장 */
+        .stats-panel {
+            background: rgba(0, 0, 0, 0.6);
+            padding: 10px;
+            border-radius: 10px;
+            margin-top: 5px;
+            font-size: 0.9rem;
+        }
+
+        /* 학습 통계 스타일 */
+        .math-stats {
+            background: #1a202c;
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #4a5568;
+            margin-bottom: 10px;
+        }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-size: 0.95rem;
+            color: #cbd5e0;
+        }
+        .stat-row:last-child { margin-bottom: 0; }
+
+        /* 상점 버튼 */
+        .shop-button {
+            position: absolute; bottom: 20px; right: 20px;
+            background: linear-gradient(135deg, #ff9966, #ff5e62);
+            border: none; border-radius: 50%; width: 70px; height: 70px;
+            color: white; font-size: 1rem; font-weight: bold; cursor: pointer;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5); pointer-events: auto;
+        }
+
+        /* === 우측 사이드바 (문제 영역) === */
+        #sidebar {
+            width: 380px;
+            min-width: 380px;
+            background: #2d3748;
+            border-left: 4px solid #4a5568;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            z-index: 10;
+            box-shadow: -5px 0 15px rgba(0,0,0,0.3);
+        }
+
+        .sidebar-header {
+            font-size: 1.5rem;
+            color: #4fd1c5;
+            margin-bottom: 20px;
+            text-align: center;
+            border-bottom: 2px solid #4a5568;
+            padding-bottom: 10px;
+        }
+
+        /* 문제 표시 영역 */
+        #quiz-container {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .problem-box {
+            background: #1a202c;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-size: 1.3rem;
+            line-height: 1.6;
+        color: #e2e8f0;
+            white-space: pre-line;
+            border: 2px solid #4a5568;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+        
+        .answer-input {
+            width: 100%;
+            padding: 15px;
+            font-size: 1.5rem;
+            border: 3px solid #4fd1c5;
+            border-radius: 10px;
+            background: #1a202c;
+            color: white;
+            font-family: 'Jua', sans-serif;
+            text-align: center;
+            margin-bottom: 10px;
+            user-select: auto; /* 입력 허용 */
+        }
+        
+        /* type=number 화살표 제거 */
+        .answer-input::-webkit-outer-spin-button,
+        .answer-input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        .submit-btn {
+            width: 100%;
+            padding: 15px;
+            font-size: 1.3rem;
+            background: linear-gradient(90deg, #4facfe, #00f2fe);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        .submit-btn:active { transform: scale(0.98); }
+
+        /* 업그레이드 선택 모드 */
+        #upgrade-container {
+            display: none;
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+        .upgrade-card {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+                padding: 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: transform 0.2s, border 0.2s;
+            border: 2px solid transparent;
+            text-align: center;
+        }
+        .upgrade-card:hover { transform: translateY(-3px); border-color: white; }
+        .upgrade-title { font-size: 1.3rem; font-weight: bold; margin-bottom: 5px; }
+        .upgrade-desc { font-size: 1rem; opacity: 0.9; }
+
+        /* 알림 메시지 */
+        .toast {
+            position: absolute;
+            top: 20%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 30px;
+            font-size: 1.5rem;
+            opacity: 0;
+            transition: opacity 0.5s;
+            pointer-events: none;
+            z-index: 2000;
+            white-space: nowrap;
+        }
+
+        /* 시작 화면 */
+        #start-screen {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(135deg, #1a202c, #2d3748);
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            z-index: 3000;
+        }
+        .start-btn {
+            padding: 15px 50px; font-size: 2rem;
+            background: linear-gradient(90deg, #f6d365, #fda085);
+            border: none; border-radius: 50px; cursor: pointer;
+            box-shadow: 0 10px 20px rgba(253, 160, 133, 0.4);
+            font-family: 'Jua', sans-serif;
+        }
+
+        /* 상점 모달 */
+        .modal-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.85); z-index: 2500;
+            justify-content: center; align-items: center;
+        }
+        .modal-content {
+            background: #2d3748; border: 4px solid gold;
+            border-radius: 20px; padding: 30px; width: 500px; text-align: center;
+        }
+        .shop-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 20px; }
+        .shop-item { background: #1a202c; padding: 15px; border-radius: 10px; cursor: pointer; border: 1px solid #555; }
+        .shop-item:hover { border-color: gold; }
+
+        /* 랭킹 버튼 - 상점 버튼 왼쪽 */
+        .rank-button {
+            position: absolute;
+            bottom: 20px;
+            right: 110px; /* 상점 버튼 옆 */
+            background: linear-gradient(135deg, #a18cd1, #fbc2eb);
+            border: none;
+            border-radius: 50%;
+            width: 70px;
+            height: 70px;
+            color: white;
+            font-size: 0.9rem;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+            pointer-events: auto;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* 랭킹 테이블 스타일 */
+        .rank-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            font-size: 0.9rem;
+            color: #e2e8f0;
+        }
+        .rank-table th, .rank-table td {
+            padding: 10px;
+            border-bottom: 1px solid #4a5568;
+            text-align: center;
+        }
+        .rank-table th {
+            background: #2d3748;
+            color: #4fd1c5;
+        }
+        .my-rank {
+            background: rgba(79, 209, 197, 0.2);
+            font-weight: bold;
+            color: #fff;
+        }
+
+        /* 닉네임 입력 모달 */
+        #name-modal {
+            z-index: 3500;
+        }
+        .name-input {
+            width: 80%;
+            padding: 10px;
+            font-size: 1.2rem;
+            border-radius: 5px;
+            border: 2px solid #4a5568;
+            background: #1a202c;
+            color: white;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+    </style>
+</head>
+ <body>
+
+    <!-- 좌측 게임 영역 -->
+    <div id="game-area">
+        <canvas id="gameCanvas"></canvas>
+        
+        <div id="ui-layer">
+            <div class="hud-top">
+                <div class="status-bar">
+                    <div class="bar-container">
+                        <div class="hp-bar-fill" id="hpBar"></div>
+                        <div class="bar-text" id="hpText">HP 100/100</div>
+                    </div>
+                    <!-- 상세 스탯 패널 추가 -->
+                    <div class="stats-panel">
+                        <div>난이도: <span id="diff-display" style="color:#4fd1c5">평화</span></div>
+                        <div style="font-size: 0.8rem; margin-top:5px; color:#aaa;">
+                            ⚔️ 내 공격력: <span id="stat-dmg">25</span> <br>
+                            ⚡ 연사속도: <span id="stat-spd">1.25</span>/s <br>
+                            🏹 발사체수: <span id="stat-cnt">1</span> <br>
+                            👾 적 공격력: <span id="enemy-dmg" style="color:#f56565">0.5</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="currency-display">
+                    <span>💰</span><span id="goldDisplay">0</span>
+                </div>
+            </div>
+
+            <div class="skill-dock" id="skillDock">
+                <div class="skill-slot empty" onclick="useSkill('bomb')">
+                    <span style="font-size:24px">💣</span><span class="skill-count" id="cnt-bomb">0</span><span class="skill-key">1</span>
+                </div>
+                <div class="skill-slot empty" onclick="useSkill('heal')">
+                    <span style="font-size:24px">❤️</span><span class="skill-count" id="cnt-heal">0</span><span class="skill-key">2</span>
+                </div>
+                <div class="skill-slot empty" onclick="useSkill('shield')">
+                    <span style="font-size:24px">🛡️</span><span class="skill-count" id="cnt-shield">0</span><span class="skill-key">3</span>
+                </div>
+            </div>
+
+            <button class="rank-button" onclick="openRankingModal()">🏆 랭킹</button>
+            <button class="shop-button" onclick="game.toggleShop()">상점</button>
+        </div>
+    </div>
+
+    <!-- 우측 사이드바 (문제 영역) -->
+    <div id="sidebar">
+        <div class="sidebar-header">수학 작전 통제실</div>
+        
+        <!-- 학습 통계 패널 추가 -->
+        <div class="math-stats">
+            <div class="stat-row"><span>🔢 총 문제 수</span><span id="stat-total-problems">1</span></div>
+            <div class="stat-row"><span>✏️ 풀이 시도 횟수</span><span id="stat-attempts">0</span></div>
+            <div class="stat-row"><span>⭕ 정답 횟수</span><span id="stat-correct">0</span></div>
+            <div class="stat-row"><span>❌ 오답 횟수</span><span id="stat-wrong">0</span></div>
+            <div class="stat-row"><span>🔥 현재 게임 연속 정답수</span><span id="stat-combo" style="color:#f6ad55">0</span></div>
+            <div class="stat-row"><span>🏆 최고 연속 정답수 기록</span><span id="stat-max-combo">0</span></div>
+            <div class="stat-row"><span>📊 정답률</span><span id="stat-accuracy">0%</span></div>
+        </div>
+
+        <hr style="border: 0; border-top: 1px solid #4a5568; margin: 15px 0;">
+        
+        <!-- 퀴즈 모드 -->
+        <div id="quiz-container">
+            <div class="problem-box" id="problem-text">
+                문제 로딩중...
+        </div>
+            <div class="input-group">
+                <input type="number" id="answer-input" class="answer-input" placeholder="정답 입력" onkeydown="checkEnter(event)">
+                <button class="submit-btn" onclick="submitAnswer()">발사 (제출)</button>
+                </div>
+            <p style="font-size: 0.9rem; color: #aaa; text-align: center;">
+                정답을 맞추면 캐릭터가 업그레이드 됩니다!
+            </p>
+   </div>
+
+        <!-- 업그레이드 선택 모드 -->
+        <div id="upgrade-container">
+            <div style="text-align:center; color:#4fd1c5; margin-bottom:10px;">보상을 선택하세요!</div>
+            <!-- 동적 생성 -->
+    </div>
+   </div>
+    
+    <!-- 시작 화면 -->
+    <div id="start-screen">
+        <h1 style="font-size: 3rem; color: #4fd1c5; text-shadow: 0 0 20px rgba(79,209,197,0.5); margin-bottom: 20px;">
+            평균의 수호자
+        </h1>
+        <p style="color: #cbd5e0; font-size: 1.2rem; margin-bottom: 40px; text-align: center; line-height: 1.6;">
+            좌측에서는 전투가, 우측에서는 수학 문제가 진행됩니다.<br>
+            문제를 풀어 캐릭터를 성장시키고 적을 막아내세요!
+        </p>
+        <button class="start-btn" onclick="checkNameAndStart()">작전 개시</button>
+    </div>
+
+    <!-- 상점 모달 -->
+    <div id="shop-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2 style="color: gold; margin-top: 0;">보급 상점</h2>
+            <p>보유 골드: <span id="shop-gold">0</span></p>
+            <div class="shop-grid">
+                <div class="shop-item" onclick="buySkill('bomb', 100)">
+                    <div style="font-size: 30px;">💣</div><div>전멸 폭탄</div><div style="color:gold">100G</div>
+            </div>
+                <div class="shop-item" onclick="buySkill('heal', 50)">
+                    <div style="font-size: 30px;">❤️</div><div>긴급 회복</div><div style="color:gold">50G</div>
+        </div>
+                <div class="shop-item" onclick="buySkill('shield', 150)">
+                    <div style="font-size: 30px;">🛡️</div><div>무적 방패</div><div style="color:gold">150G</div>
+    </div>
+            </div>
+            <button onclick="game.toggleShop()" style="margin-top: 20px; padding: 10px 30px; background: #4a5568; border:none; color:white; border-radius: 5px; cursor:pointer;">닫기</button>
+    </div>
+  </div>
+
+    <!-- 랭킹 모달 -->
+    <div id="rank-modal" class="modal-overlay">
+        <div class="modal-content" style="width: 600px; max-height: 80vh; overflow-y: auto;">
+            <h2 style="color: #a18cd1; margin-top: 0;">🏆 글로벌 랭킹</h2>
+            
+            <div style="display:flex; gap:10px; justify-content:center; margin-bottom:15px;">
+                <button onclick="loadRanking('level')" class="shop-item" style="padding:5px 15px;">레벨순</button>
+                <button onclick="loadRanking('problems')" class="shop-item" style="padding:5px 15px;">문제순</button>
+                <button onclick="loadRanking('combo')" class="shop-item" style="padding:5px 15px;">콤보순</button>
+            </div>
+
+            <div id="rank-list-container">로딩중...</div>
+            
+            <button onclick="document.getElementById('rank-modal').style.display='none'" style="margin-top: 20px; padding: 10px 30px; background: #4a5568; border:none; color:white; border-radius: 5px; cursor:pointer;">닫기</button>
+        </div>
+    </div>
+
+    <!-- 닉네임 입력 모달 -->
+    <div id="name-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-content" style="width: 400px;">
+            <h2 style="color: #4fd1c5; margin-top: 0;">요원 등록</h2>
+            <p>랭킹에 등록될 이름을 입력하세요.</p>
+            <input type="text" id="username-input" class="name-input" placeholder="닉네임 (최대 8글자)" maxlength="8">
+            <button onclick="submitName()" class="start-btn" style="font-size:1.2rem; padding:10px 30px;">확인</button>
+        </div>
+    </div>
+
+    <div id="toast" class="toast">메시지</div>
+
+    <!-- 오디오 -->
+    <audio id="bgm" loop><source src="berserk.mp3" type="audio/mp3"></audio>
+    <audio id="sfx-shoot" src="quick-swing-sound-419581.mp3"></audio>
+    <audio id="sfx-hit" src="fireball-impact.mp3"></audio>
+    <audio id="sfx-level" src="bonus-points-190035.mp3"></audio>
+    <audio id="sfx-over" src="game-over-417465.mp3"></audio>
+
+  <script>
+        // === 랭킹 시스템 ===
+        const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyf3MsUDBbOSDnQwOZjiVRKCaGCm1a7KOvYtBtj_AtwKxkYAq4mMMM6ZTGUTcbL0PZ_/exec";
+        let currentUser = "";
+
+        function checkNameAndStart() {
+            const storedName = localStorage.getItem('mathHeroName');
+            if (storedName) {
+                currentUser = storedName;
+                startGame();
+            } else {
+                document.getElementById('start-screen').style.display = 'none';
+                document.getElementById('name-modal').style.display = 'flex';
+                document.getElementById('username-input').focus();
+            }
+        }
+
+        function submitName() {
+            const input = document.getElementById('username-input');
+            const name = input.value.trim();
+            if (!name) {
+                showToast("이름을 입력해주세요!");
+                return;
+            }
+            currentUser = name;
+            localStorage.setItem('mathHeroName', name);
+            document.getElementById('name-modal').style.display = 'none';
+            startGame();
+        }
+
+        function sendRanking() {
+            if (!currentUser) return;
+
+            const data = {
+                username: currentUser,
+                level: game.player.level,
+                problems: game.stats.correct, // 정답 횟수를 푼 문제 수로 기록
+                maxCombo: game.stats.maxCombo,
+                timestamp: new Date().toISOString()
+            };
+
+            fetch(APPS_SCRIPT_URL, {
+                method: "POST",
+                mode: "no-cors", // 중요: 구글 앱스 스크립트는 no-cors 필요
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(data)
+            }).then(() => {
+                console.log("Ranking sent!");
+            }).catch(err => console.error("Ranking error:", err));
+        }
+
+        function openRankingModal() {
+            document.getElementById('rank-modal').style.display = 'flex';
+            loadRanking('level');
+        }
+
+        function loadRanking(type) {
+            const container = document.getElementById('rank-list-container');
+            container.innerHTML = "데이터 불러오는 중...";
+
+            // 내 기록 강조를 위해 username 파라미터 추가
+            const url = `${APPS_SCRIPT_URL}?type=${type}&username=${encodeURIComponent(currentUser || '')}`;
+
+            fetch(url)
+            .then(res => res.json())
+            .then(data => {
+                let html = `
+                    <table class="rank-table">
+                        <thead>
+                            <tr>
+                                <th>순위</th>
+                                <th>이름</th>
+                                <th>LV</th>
+                                <th>정답</th>
+                                <th>최대콤보</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                
+                if (data.length === 0) {
+                    html += `<tr><td colspan="5">등록된 랭킹이 없습니다.</td></tr>`;
+                } else {
+                    data.forEach((row, index) => {
+                        const isMe = row.username === currentUser;
+                        const rank = row.rank || (index + 1); // 서버에서 rank를 줄 수도 있고, 아니면 인덱스로
+                        html += `
+                            <tr class="${isMe ? 'my-rank' : ''}">
+                                <td>${rank}</td>
+                                <td>${row.username}</td>
+                                <td>${row.level}</td>
+                                <td>${row.problems}</td>
+                                <td>${row.maxCombo}</td>
+                            </tr>
+                        `;
+                    });
+                }
+                html += `</tbody></table>`;
+                container.innerHTML = html;
+            })
+            .catch(err => {
+                container.innerHTML = "랭킹을 불러오는데 실패했습니다.";
+                console.error(err);
+            });
+        }
+
+        // === 1. 수학 문제 생성기 ===
+        class MathGen {
+            constructor() {
+                this.names = ['철수', '영희', '민수', '지수', '현우', '민지', '수현', '호진'];
+                // 상황별 템플릿 정의
+                this.scenarios = [
+                    { item: '수학 시험 점수', unit: '점', action: '받았습니다', question: '평균 점수', range: [70, 95] },
+                    { item: '가지고 있는 사탕', unit: '개', action: '가지고 있습니다', question: '사탕의 평균 개수', range: [10, 40] },
+                    { item: '줄넘기 기록', unit: '회', action: '했습니다', question: '줄넘기 기록의 평균', range: [30, 80] },
+                    { item: '읽은 책', unit: '권', action: '읽었습니다', question: '읽은 책의 평균 권수', range: [5, 20] },
+                    { item: '모은 딱지', unit: '장', action: '모았습니다', question: '모은 딱지의 평균 개수', range: [15, 50] }
+                ];
+            }
+
+            getRandomInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+
+            generateProblem(level) {
+                const isReverse = Math.random() > 0.5; // 50% 확률로 역산 문제
+                const scenario = this.scenarios[Math.floor(Math.random() * this.scenarios.length)];
+                const count = this.getRandomInt(2, 3); // 2~3명 등장
+                
+                // 이름 랜덤 선택
+                let currentNames = [...this.names].sort(() => 0.5 - Math.random()).slice(0, count);
+                
+                // 난이도에 따른 값 범위 조정
+                let minVal = scenario.range[0] + (level * 2);
+                let maxVal = scenario.range[1] + (level * 2);
+                
+                // 평균값 먼저 결정 (정수 답을 위해)
+                let avg = this.getRandomInt(minVal, maxVal);
+                let total = avg * count;
+                
+                // 개별 값 생성 (평균 주변 값으로)
+                let values = [];
+                let currentSum = 0;
+                for(let i=0; i<count-1; i++) {
+                    let val = this.getRandomInt(avg - 10, avg + 10);
+                    if(val < 0) val = 0; // 음수 방지
+                    values.push(val);
+                    currentSum += val;
+                }
+                // 마지막 값은 합계를 맞추기 위해 계산
+                let lastVal = total - currentSum;
+                // 만약 마지막 값이 음수면 보정 (단순하게 모두 평균값으로 통일)
+                if (lastVal < 0) {
+                    values = new Array(count-1).fill(avg);
+                    lastVal = avg;
+                }
+                values.push(lastVal);
+                
+                // 값 섞기
+                values.sort(() => 0.5 - Math.random());
+
+                let question = '';
+                let answer = 0;
+
+                if (!isReverse) {
+                    // === 정방향: 평균 구하기 ===
+                    // 예: 철수는 10개, 영희는 20개를 가지고 있습니다. 평균은?
+                    let sentence = "";
+                    for(let i=0; i<count; i++) {
+                        // 조사 처리 (간단히)
+                        let sub = i === count-1 ? "" : ", ";
+                        sentence += `${currentNames[i]}는 ${values[i]}${scenario.unit}${sub}`;
+                    }
+                    sentence += `을(를) ${scenario.action}.`;
+                    
+                    question = `${scenario.item}에 대한 조사 결과입니다.\n${sentence}\n\n이 친구들의 ${scenario.question}는 얼마입니까?`;
+                    answer = avg;
+
+            } else {
+                    // === 역방향: 값 구하기 ===
+                    // 예: 두 명의 평균은 15개입니다. 철수가 10개라면 영희는?
+                    let groupName = count === 2 ? `${currentNames[0]}와(과) ${currentNames[1]}` : `${count}명의 친구들`;
+                    
+                    question = `${groupName}의 ${scenario.item} 평균은 ${avg}${scenario.unit}입니다.\n`;
+                    
+                    let knownPart = "";
+                    for(let i=0; i<count-1; i++) {
+                        knownPart += `${currentNames[i]}는 ${values[i]}${scenario.unit}`;
+                        if(i < count-2) knownPart += ", ";
+                    }
+                    question += `${knownPart}일 때,\n\n나머지 ${currentNames[count-1]}의 값은 얼마입니까?`;
+                    
+                    answer = values[count-1];
+                }
+
+                return { question, answer };
+            }
+        }
+
+        // === 2. 게임 엔진 ===
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const gameArea = document.getElementById('game-area');
+
+        // 이미지
+        const imgHero = new Image(); imgHero.src = 'hero.png';
+        const imgEnemy = new Image(); imgEnemy.src = 'devilking.png';
+
+        // 전역 변수
+        let currentProblem = null;
+        let isInputFocused = false;
+
+        class Game {
+            constructor() {
+                this.state = 'start'; 
+                this.lastTime = 0;
+                this.mathGen = new MathGen();
+                
+                this.player = {
+                    x: 0, y: 0,
+                    hp: 100, maxHp: 100,
+                    level: 1,
+                    damage: 25,
+                    fireRate: 800,
+                    lastFire: 0,
+                    projectileCount: 1
+                };
+
+                this.gold = 0;
+                this.skills = { bomb: 0, heal: 0, shield: 0 };
+                this.isInvincible = false;
+
+                this.enemies = [];
+                this.bullets = [];
+                this.particles = [];
+                this.floatingTexts = [];
+
+                this.spawnRate = 2000; // 초기 스폰 2초 (여유롭게 시작)
+                this.lastSpawn = 0;
+                this.gameTime = 0; // 게임 진행 시간 추적
+
+                // 통계 데이터
+                this.stats = {
+                    totalProblems: 0, 
+                    attempts: 0,
+                    correct: 0,
+                    wrong: 0,
+                    combo: 0,
+                    maxCombo: 0
+                };
+
+                // 로컬 스토리지에서 최고 기록 불러오기 (필요시 사용)
+                this.highScore = localStorage.getItem('mathHighLv') || 1;
+
+                window.addEventListener('resize', () => this.resize());
+                this.resize();
+            }
+
+            resize() {
+                // 사이드바를 제외한 크기
+                canvas.width = gameArea.clientWidth;
+                canvas.height = gameArea.clientHeight;
+                if (this.player.x === 0) {
+                    this.player.x = canvas.width / 2;
+                    this.player.y = canvas.height / 2;
+                }
+            }
+
+            start() {
+                document.getElementById('start-screen').style.display = 'none';
+                this.state = 'playing';
+                this.resize();
+                this.player.x = canvas.width / 2;
+                this.player.y = canvas.height / 2;
+
+                this.loop(0);
+                document.getElementById('bgm').play().catch(()=>{});
+                
+                this.updateHUD();
+                this.updateSkillDock();
+                this.nextProblem(); // 첫 문제 출제
+            }
+
+            nextProblem() {
+                // 퀴즈 모드로 전환
+                document.getElementById('quiz-container').style.display = 'flex';
+                document.getElementById('upgrade-container').style.display = 'none';
+                document.getElementById('answer-input').value = '';
+                document.getElementById('answer-input').focus();
+
+                currentProblem = this.mathGen.generateProblem(this.player.level);
+                // 문제 생성 시 카운트 증가 (첫 문제는 start()에서 호출되므로 초기값 1로 설정했음)
+                // 하지만 nextProblem이 호출될 때마다 증가시키는 것이 로직상 깔끔함.
+                // start()에서 nextProblem을 부르므로 초기값을 0으로 하고 여기서 증가시킴.
+                this.stats.totalProblems++; 
+                this.updateHUD(); // 즉시 반영
+                
+                document.getElementById('problem-text').innerText = `[LV.${this.player.level}]\n${currentProblem.question}`;
+            }
+
+            loop(timestamp) {
+                if (this.state === 'paused' || this.state === 'gameover') {
+                    if(this.state === 'paused') requestAnimationFrame((t) => this.loop(t)); // 멈춰있어도 루프는 유지 (재개 위해)
+                return;
+            }
+            
+                const dt = timestamp - this.lastTime;
+                this.lastTime = timestamp;
+
+                // 델타타임 보정 (너무 큰 값 방지)
+                if (dt < 100) {
+                    this.update(dt, timestamp);
+                    this.draw();
+                }
+
+                requestAnimationFrame((t) => this.loop(t));
+            }
+
+            update(dt, timestamp) {
+                this.gameTime += dt; // 게임 시간 누적
+                const seconds = this.gameTime / 1000;
+
+                // === 난이도 곡선 설계 ===
+                // 1. 초반 4분(240초): 스폰 속도 2.0초 -> 1.0초로 서서히 감소
+                // 2. 중반(240초~): 스폰 속도 1.0초 -> 0.5초
+                // 3. 후반(480초~): 스폰 속도 0.3초 (물량 폭주)
+                
+                let currentSpawnRate = 2000;
+                if (seconds < 240) {
+                    // 4분까지는 천천히 빨라짐
+                    currentSpawnRate = 2000 - (seconds * 4); // 240초일 때 약 1000ms
+                } else if (seconds < 480) {
+                    // 4분~8분: 조금 더 빨라짐
+                    currentSpawnRate = 1000 - ((seconds - 240) * 2); // 480초일 때 약 500ms
+                } else {
+                    // 8분 이후: 극한
+                    currentSpawnRate = 500 - ((seconds - 480) * 3);
+                    if (currentSpawnRate < 300) currentSpawnRate = 300;
+                }
+                this.spawnRate = currentSpawnRate;
+
+                // 적 스폰
+                if (timestamp - this.lastSpawn > this.spawnRate) {
+                    this.spawnEnemy();
+                    
+                    // 4분 이후부터 물량 폭주 확률 생김 (점진적 증가)
+                    if (seconds > 240 && Math.random() < 0.1) this.spawnEnemy(); 
+                    if (seconds > 480 && Math.random() < 0.2) this.spawnEnemy();
+
+                    this.lastSpawn = timestamp;
+                }
+
+                // 자동 공격
+                if (timestamp - this.player.lastFire > this.player.fireRate) {
+                    this.fireBullet();
+                    this.player.lastFire = timestamp;
+                }
+
+                // 총알 이동
+                for (let i = this.bullets.length - 1; i >= 0; i--) {
+                    let b = this.bullets[i];
+                    b.x += b.vx * dt * 0.06;
+                    b.y += b.vy * dt * 0.06;
+
+                    if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
+                        this.bullets.splice(i, 1);
+                        continue;
+                    }
+
+                    for (let j = this.enemies.length - 1; j >= 0; j--) {
+                        let e = this.enemies[j];
+                        let dist = Math.hypot(b.x - e.x, b.y - e.y);
+                        if (dist < e.radius + 5) {
+                            e.hp -= this.player.damage;
+                            this.showDamage(e.x, e.y, this.player.damage);
+                            this.bullets.splice(i, 1);
+                            if (e.hp <= 0) this.killEnemy(j);
+                    break;    
+            }
+                    }
+                }
+
+                // 적 이동
+                for (let i = this.enemies.length - 1; i >= 0; i--) {
+                    let e = this.enemies[i];
+                    let angle = Math.atan2(this.player.y - e.y, this.player.x - e.x);
+                    e.x += Math.cos(angle) * e.speed * dt * 0.06;
+                    e.y += Math.sin(angle) * e.speed * dt * 0.06;
+
+                    let dist = Math.hypot(this.player.x - e.x, this.player.y - e.y);
+                    // 플레이어 피격 범위 조정 (30 -> 60)
+                    if (dist < 60 + e.radius) {
+                        if (!this.isInvincible) {
+                            // 플레이어 피격 데미지 조정 (1.0 -> 0.5)
+                            this.player.hp -= 0.5; 
+                            this.updateHUD();
+                            if (this.player.hp <= 0) this.gameOver();
+                        }
+                    }
+                }
+
+                // 파티클
+                this.particles.forEach((p, i) => {
+                    p.life -= dt;
+                    p.x += p.vx; p.y += p.vy;
+                    if (p.life <= 0) this.particles.splice(i, 1);
+                });
+                
+                // 텍스트
+                this.floatingTexts.forEach((t, i) => {
+                    t.life -= dt; t.y -= 0.5;
+                    if (t.life <= 0) this.floatingTexts.splice(i, 1);
+                });
+            }
+
+            draw() {
+                // 우주 배경 그리기
+                // 1. 깊은 우주색 배경
+                ctx.fillStyle = '#0b0d17'; 
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // 2. 별 그리기 (랜덤 위치에 별 생성)
+                // 매 프레임마다 그리면 번쩍거리므로, 미리 생성된 별 배열을 사용하거나
+                // 간단하게 랜덤 시드로 고정된 별을 그림.
+                // 여기서는 성능을 위해 단순 난수로 매번 그리지 않고,
+                // 화면 좌표 기반으로 의사 난수를 생성하여 고정된 별처럼 보이게 함.
+                
+                ctx.fillStyle = '#ffffff';
+                for (let i = 0; i < 100; i++) {
+                    // 간단한 해시 함수로 좌표 고정
+                    const x = (Math.sin(i * 123.45) * 0.5 + 0.5) * canvas.width;
+                    const y = (Math.cos(i * 678.90) * 0.5 + 0.5) * canvas.height;
+                    const size = (Math.sin(i * 999) + 2) / 2; // 0.5 ~ 1.5
+                    const twinkle = Math.sin(performance.now() / 200 + i); // 반짝임
+                    
+                    ctx.globalAlpha = 0.5 + twinkle * 0.3;
+                    ctx.beginPath();
+                    ctx.arc(x, y, size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.globalAlpha = 1.0;
+
+                // Enemies
+                this.enemies.forEach(e => {
+                    ctx.drawImage(imgEnemy, e.x - e.radius, e.y - e.radius, e.radius*2, e.radius*2);
+                    // HP Bar
+                    ctx.fillStyle = 'red'; ctx.fillRect(e.x-15, e.y-e.radius-8, 30, 4);
+                    ctx.fillStyle = 'green'; ctx.fillRect(e.x-15, e.y-e.radius-8, 30*(e.hp/e.maxHp), 4);
+                });
+
+                // Bullets
+                ctx.fillStyle = '#4fd1c5';
+                this.bullets.forEach(b => {
+                    ctx.beginPath(); ctx.arc(b.x, b.y, 8, 0, Math.PI*2); ctx.fill();
+                });
+
+                // Player
+                ctx.save();
+                ctx.translate(this.player.x, this.player.y);
+                if (this.isInvincible && (Math.floor(Date.now()/100)%2===0)) ctx.globalAlpha = 0.5;
+                
+                // 플레이어 크기 2배 (70x70 -> 140x140)
+                ctx.drawImage(imgHero, -70, -70, 140, 140);
+                
+                if(this.isInvincible) {
+                    ctx.beginPath(); ctx.strokeStyle='#00ffff'; ctx.lineWidth=3;
+                    ctx.arc(0,0,80,0,Math.PI*2); ctx.stroke();
+                }
+                ctx.restore();
+
+                // Particles
+                this.particles.forEach(p => {
+                    ctx.fillStyle = p.color; ctx.globalAlpha = p.life/500;
+                    ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
+                });
+                ctx.globalAlpha = 1;
+
+                // Floating Text
+                this.floatingTexts.forEach(t => {
+                    ctx.fillStyle = t.color; ctx.font = 'bold 20px Jua';
+                    ctx.fillText(t.text, t.x, t.y);
+                });
+            }
+
+            spawnEnemy() {
+                let x, y;
+                if(Math.random()<0.5) {
+                    x = Math.random()<0.5 ? -30 : canvas.width+30; y = Math.random()*canvas.height;
+                } else {
+                    x = Math.random()*canvas.width; y = Math.random()<0.5 ? -30 : canvas.height+30;
+                }
+                
+                const seconds = this.gameTime / 1000;
+                
+                // 기본 체력 30
+                // 4분(240초)까지는 시간당 체력 증가 거의 없음 (매우 미미)
+                // 4분 이후부터 체력 증가 시작
+                
+                let timeHpBonus = 0;
+                if (seconds > 240) {
+                    timeHpBonus = (seconds - 240) * 0.5; // 4분 이후 2초당 1 증가
+                }
+                
+                // 레벨에 따른 체력 증가 (사용자가 강해진 만큼 적도 강해짐)
+                const levelHpBonus = this.player.level * 5; 
+
+                const hp = 30 + levelHpBonus + timeHpBonus;
+                
+                // 속도: 4분까지는 느림(1.0~1.5), 그 이후 점차 빨라짐
+                let baseSpeed = 1.0;
+                if (seconds > 240) baseSpeed += (seconds - 240) * 0.005;
+                
+                const speed = Math.min(4.0, baseSpeed + Math.random() * 0.5);
+
+                // 적 크기 2배 (radius 25 -> 50)
+                this.enemies.push({ x, y, hp, maxHp: hp, radius: 50, speed: speed });
+            }
+
+            fireBullet() {
+                if(this.enemies.length===0) return;
+                // 가까운 적
+                let target = this.enemies.reduce((a, b) => {
+                    let distA = Math.hypot(a.x-this.player.x, a.y-this.player.y);
+                    let distB = Math.hypot(b.x-this.player.x, b.y-this.player.y);
+                    return distA < distB ? a : b;
+                });
+
+                const angle = Math.atan2(target.y - this.player.y, target.x - this.player.x);
+                const count = this.player.projectileCount;
+                const spread = 0.2;
+                const startAngle = angle - (spread*(count-1))/2;
+
+                for(let i=0; i<count; i++){
+                    let th = startAngle + spread*i;
+                    this.bullets.push({ x: this.player.x, y: this.player.y, vx: Math.cos(th)*12, vy: Math.sin(th)*12 });
+                }
+                document.getElementById('sfx-shoot').currentTime=0;
+                document.getElementById('sfx-shoot').play().catch(()=>{});
+            }
+
+            killEnemy(idx) {
+                const e = this.enemies[idx];
+                for(let i=0; i<5; i++) this.particles.push({
+                    x:e.x, y:e.y, vx:(Math.random()-0.5)*5, vy:(Math.random()-0.5)*5,
+                    life:300, color:'red', size:3
+                });
+                this.enemies.splice(idx, 1);
+                this.gold += 10;
+                this.updateHUD();
+            }
+
+            showDamage(x, y, txt) {
+                this.floatingTexts.push({ x, y, text: txt, life: 40, color: '#fff' });
+            }
+
+            updateHUD() {
+                document.getElementById('hpBar').style.width = `${Math.max(0, this.player.hp)}%`;
+                document.getElementById('hpText').innerText = `HP ${Math.ceil(this.player.hp)}/${this.player.maxHp}`;
+                document.getElementById('goldDisplay').innerText = this.gold;
+
+                // 난이도 표시
+                const sec = this.gameTime / 1000;
+                let diffText = "평화";
+                let diffColor = "#4fd1c5"; // green
+                if (sec > 240) { diffText = "긴장"; diffColor = "#f6ad55"; } // orange
+                if (sec > 480) { diffText = "위기"; diffColor = "#f56565"; } // red
+                
+                const diffEl = document.getElementById('diff-display');
+                diffEl.innerText = diffText;
+                diffEl.style.color = diffColor;
+
+                // 능력치 표시
+                document.getElementById('stat-dmg').innerText = this.player.damage;
+                document.getElementById('stat-spd').innerText = (1000 / this.player.fireRate).toFixed(2);
+                document.getElementById('stat-cnt').innerText = this.player.projectileCount;
+                document.getElementById('enemy-dmg').innerText = "0.5"; // 현재 고정 데미지
+
+                // 학습 통계 표시
+                document.getElementById('stat-total-problems').innerText = this.stats.totalProblems;
+                document.getElementById('stat-attempts').innerText = this.stats.attempts;
+                document.getElementById('stat-correct').innerText = this.stats.correct;
+                document.getElementById('stat-wrong').innerText = this.stats.wrong;
+                document.getElementById('stat-combo').innerText = this.stats.combo;
+                document.getElementById('stat-max-combo').innerText = this.stats.maxCombo;
+                
+                let acc = 0;
+                if (this.stats.attempts > 0) {
+                    acc = ((this.stats.correct / this.stats.attempts) * 100).toFixed(1);
+                }
+                document.getElementById('stat-accuracy').innerText = `${acc}%`;
+            }
+
+            updateSkillDock() {
+                document.getElementById('cnt-bomb').innerText = this.skills.bomb;
+                document.getElementById('cnt-heal').innerText = this.skills.heal;
+                document.getElementById('cnt-shield').innerText = this.skills.shield;
+                document.querySelectorAll('.skill-slot')[0].classList.toggle('empty', this.skills.bomb<=0);
+                document.querySelectorAll('.skill-slot')[1].classList.toggle('empty', this.skills.heal<=0);
+                document.querySelectorAll('.skill-slot')[2].classList.toggle('empty', this.skills.shield<=0);
+            }
+
+            toggleShop() {
+                const modal = document.getElementById('shop-modal');
+                if(modal.style.display==='flex') {
+                    modal.style.display='none';
+                    this.lastTime = performance.now();
+                    this.state='playing';
+                    this.loop(this.lastTime);
+            } else {
+                    modal.style.display='flex';
+                    this.state='paused';
+                    document.getElementById('shop-gold').innerText=this.gold;
+                }
+            }
+            
+            gameOver() {
+                this.state = 'gameover';
+                document.getElementById('sfx-over').play().catch(()=>{});
+                
+                // 랭킹 전송
+                sendRanking();
+                
+                alert("게임 오버!");
+                location.reload();
+            }
+        }
+
+        // === 게임 인스턴스 ===
+        let game = new Game();
+
+        function startGame() {
+            game.start();
+        }
+
+        // === UI 인터랙션 ===
+        function checkEnter(e) {
+            if(e.key === 'Enter') submitAnswer();
+        }
+
+        function submitAnswer() {
+            const input = document.getElementById('answer-input');
+            const val = parseInt(input.value);
+            
+            if (isNaN(val)) {
+                showToast("숫자를 입력하세요.");
+                return;
+            }
+
+            game.stats.attempts++;
+
+            if (val === currentProblem.answer) {
+                showToast("정답! 업그레이드를 선택하세요.");
+                document.getElementById('sfx-level').play().catch(()=>{});
+                
+                // 통계 갱신
+                game.stats.correct++;
+                game.stats.combo++;
+                if(game.stats.combo > game.stats.maxCombo) game.stats.maxCombo = game.stats.combo;
+                
+                game.updateHUD();
+                
+                // 업그레이드 모드로 전환
+                const quizArea = document.getElementById('quiz-container');
+                const upgradeArea = document.getElementById('upgrade-container');
+                quizArea.style.display = 'none';
+                upgradeArea.style.display = 'flex';
+                upgradeArea.innerHTML = '';
+
+                // 업그레이드 옵션 생성
+                const opts = [
+                    { name: '공격력 +10', apply: () => game.player.damage += 10 },
+                    { name: 'HP 회복 & 최대 +50', apply: () => { game.player.maxHp+=50; game.player.hp=game.player.maxHp; } },
+                    { name: '연사력 +15%', apply: () => game.player.fireRate *= 0.85 },
+                    { name: '다중 사격 +1', apply: () => game.player.projectileCount++ }
+                ];
+                
+                opts.forEach(opt => {
+                    let div = document.createElement('div');
+                    div.className = 'upgrade-card';
+                    div.innerHTML = `<div class="upgrade-title">${opt.name}</div>`;
+                    div.onclick = () => {
+                        opt.apply();
+                        showToast("업그레이드 완료!");
+                        game.player.level++;
+                        game.nextProblem();
+                    };
+                    upgradeArea.appendChild(div);
+                });
+
+            } else {
+                showToast("오답입니다! 다시 풀어보세요.");
+                game.stats.combo = 0; // 콤보 초기화
+                game.stats.wrong++;
+                game.updateHUD();
+                
+                input.value = '';
+                input.focus();
+                // 패널티: 적들 회복
+                game.enemies.forEach(e => e.hp = e.maxHp);
+            }
+        }
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.innerText = msg;
+            t.style.opacity = 1;
+            setTimeout(()=> t.style.opacity=0, 2000);
+        }
+
+        // 스킬 및 포커스 관리
+        const inputField = document.getElementById('answer-input');
+        inputField.addEventListener('focus', () => isInputFocused = true);
+        inputField.addEventListener('blur', () => isInputFocused = false);
+
+        document.addEventListener('keydown', (e) => {
+            if (isInputFocused) return; // 입력 중일 땐 단축키 무시
+            if (e.key === '1') useSkill('bomb');
+            if (e.key === '2') useSkill('heal');
+            if (e.key === '3') useSkill('shield');
+        });
+
+        function buySkill(type, cost) {
+            if(game.gold >= cost) {
+                game.gold -= cost;
+                game.skills[type]++;
+                game.updateHUD();
+                game.updateSkillDock();
+                document.getElementById('shop-gold').innerText = game.gold;
+                        } else {
+                alert("골드가 부족합니다.");
+            }
+        }
+
+        function useSkill(type) {
+            if(game.state !== 'playing') return;
+            if(game.skills[type] > 0) {
+                game.skills[type]--;
+                game.updateSkillDock();
+                
+                if(type==='bomb') {
+                    game.enemies = [];
+                    document.getElementById('sfx-hit').play().catch(()=>{});
+                } else if(type==='heal') {
+                    game.player.hp = game.player.maxHp;
+                    game.updateHUD();
+                } else if(type==='shield') {
+                    game.isInvincible = true;
+                    setTimeout(()=>game.isInvincible=false, 5000);
+                }
+            }
+        }
+
+    </script>
+</body>
+</html>
