@@ -14,6 +14,11 @@
             touch-action: manipulation; /* 터치 최적화 */
         }
 
+        /* 모바일 브라우저(특히 Android Chrome)에서 100vh가 주소창/툴바로 인해 잘리는 문제 방지 */
+        html, body {
+            height: 100%;
+        }
+
         body {
             margin: 0;
             padding: 0;
@@ -23,17 +28,26 @@
             color: white;
             display: flex;
             width: 100vw;
-            height: 100vh;
+            /* JS에서 --app-height를 window.innerHeight로 갱신 (fallback: 100dvh/100vh) */
+            height: var(--app-height, 100dvh);
+            min-height: var(--app-height, 100dvh);
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+            padding-left: env(safe-area-inset-left);
+            padding-right: env(safe-area-inset-right);
         }
 
         /* 반응형 레이아웃 처리 */
         @media (max-width: 768px) {
             body {
                 flex-direction: column;
+                /* flex 자식이 내부에서 스크롤/리사이즈될 수 있도록 */
+                min-height: 0;
             }
             #game-area {
                 height: 60% !important;
                 width: 100% !important;
+                min-height: 0;
             }
             #sidebar {
                 height: 40% !important;
@@ -42,6 +56,9 @@
                 border-left: none !important;
                 border-top: 4px solid #4a5568;
                 padding: 10px !important;
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+                min-height: 0;
             }
             /* 모바일에서 폰트 크기 조정 */
             .problem-box { font-size: 1rem !important; padding: 10px !important; margin-bottom: 10px !important; }
@@ -49,15 +66,15 @@
             .submit-btn { padding: 10px !important; font-size: 1.1rem !important; }
             
             /* 모바일에서 UI 위치 조정 */
-            .rank-button { right: 90px !important; bottom: 15px !important; width: 60px !important; height: 60px !important; font-size: 0.8rem !important; }
-            .shop-button { right: 15px !important; bottom: 15px !important; width: 60px !important; height: 60px !important; }
-            .train-button { right: 15px !important; bottom: 90px !important; width: 60px !important; height: 60px !important; font-size: 0.9rem !important; }
+            .rank-button { right: 90px !important; bottom: calc(15px + env(safe-area-inset-bottom)) !important; width: 60px !important; height: 60px !important; font-size: 0.8rem !important; }
+            .shop-button { right: 15px !important; bottom: calc(15px + env(safe-area-inset-bottom)) !important; width: 60px !important; height: 60px !important; }
+            .train-button { right: 15px !important; bottom: calc(90px + env(safe-area-inset-bottom)) !important; width: 60px !important; height: 60px !important; font-size: 0.9rem !important; }
             
             /* 모바일 통계 패널 간소화 또는 폰트 축소 */
             .math-stats { font-size: 0.8rem !important; padding: 8px !important; }
             .stat-row { font-size: 0.8rem !important; margin-bottom: 2px !important; }
             
-            .skill-dock { bottom: 15px !important; gap: 10px !important; }
+            .skill-dock { bottom: calc(15px + env(safe-area-inset-bottom)) !important; gap: 10px !important; }
             .skill-slot { width: 50px !important; height: 50px !important; }
             .skill-slot span { font-size: 18px !important; }
         }
@@ -68,6 +85,7 @@
             flex-grow: 1;
             height: 100%;
             overflow: hidden;
+            min-height: 0;
         }
 
         #gameCanvas {
@@ -138,7 +156,7 @@
         /* 하단 스킬 슬롯 */
         .skill-dock {
             position: absolute;
-            bottom: 20px;
+            bottom: calc(20px + env(safe-area-inset-bottom));
             left: 50%;
             transform: translateX(-50%);
             display: flex;
@@ -191,7 +209,7 @@
 
         /* 상점 버튼 */
         .shop-button {
-            position: absolute; bottom: 20px; right: 20px;
+            position: absolute; bottom: calc(20px + env(safe-area-inset-bottom)); right: calc(20px + env(safe-area-inset-right));
             background: linear-gradient(135deg, #ff9966, #ff5e62);
             border: none; border-radius: 50%; width: 70px; height: 70px;
             color: white; font-size: 1rem; font-weight: bold; cursor: pointer;
@@ -209,6 +227,9 @@
             padding: 20px;
             z-index: 10;
             box-shadow: -5px 0 15px rgba(0,0,0,0.3);
+            /* 모바일에서 내용이 길어질 때 잘림 방지(PC에서도 스크롤 가능) */
+            overflow-y: auto;
+            min-height: 0;
         }
 
         .sidebar-header {
@@ -350,8 +371,8 @@
         /* 랭킹 버튼 - 상점 버튼 왼쪽 */
         .rank-button {
             position: absolute;
-            bottom: 20px;
-            right: 110px; /* 상점 버튼 옆 */
+            bottom: calc(20px + env(safe-area-inset-bottom));
+            right: calc(110px + env(safe-area-inset-right)); /* 상점 버튼 옆 */
             background: linear-gradient(135deg, #a18cd1, #fbc2eb);
             border: none;
             border-radius: 50%;
@@ -572,6 +593,25 @@
     <audio id="sfx-over" src="game-over-417465.mp3"></audio>
 
   <script>
+        // === 모바일 뷰포트 높이 보정 (주소창/툴바로 인한 100vh 잘림 방지) ===
+        (function setupAppHeight() {
+            const docEl = document.documentElement;
+            const setHeight = () => {
+                const h = (window.visualViewport && window.visualViewport.height)
+                    ? window.visualViewport.height
+                    : window.innerHeight;
+                docEl.style.setProperty('--app-height', `${Math.floor(h)}px`);
+            };
+
+            setHeight();
+            window.addEventListener('resize', setHeight, { passive: true });
+            window.addEventListener('orientationchange', setHeight, { passive: true });
+            if (window.visualViewport) {
+                window.visualViewport.addEventListener('resize', setHeight, { passive: true });
+                window.visualViewport.addEventListener('scroll', setHeight, { passive: true });
+            }
+        })();
+
         // === 랭킹 시스템 ===
         const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyf3MsUDBbOSDnQwOZjiVRKCaGCm1a7KOvYtBtj_AtwKxkYAq4mMMM6ZTGUTcbL0PZ_/exec";
         let currentUser = "";
@@ -1461,7 +1501,7 @@
         font-family: sans-serif;
     ">
         the-hero-robot-invasion<br>
-        made by gametudyssam 0.006
+        made by gametudyssam 0.007
     </div>
 
 </body>
