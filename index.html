@@ -561,9 +561,9 @@
             
             <div style="display:flex; gap:10px; justify-content:center; margin-bottom:15px;">
                 <button onclick="loadRanking('level')" class="shop-item" style="padding:5px 15px; color:white;">레벨순</button>
-                <button onclick="loadRanking('problems')" class="shop-item" style="padding:5px 15px; color:white;">문제순</button>
-                <button onclick="loadRanking('combo')" class="shop-item" style="padding:5px 15px; color:white;">콤보순</button>
-                <button onclick="loadRanking('survival')" class="shop-item" style="padding:5px 15px; color:white;">생존순</button>
+                <button onclick="loadRanking('problems')" class="shop-item" style="padding:5px 15px; color:white;">푼 문제개수순</button>
+                <button onclick="loadRanking('combo')" class="shop-item" style="padding:5px 15px; color:white;">연속정답순</button>
+                <button onclick="loadRanking('survival')" class="shop-item" style="padding:5px 15px; color:white;">생존시간순</button>
                 <button onclick="loadRanking('accuracy')" class="shop-item" style="padding:5px 15px; color:white;">정답률순</button>
             </div>
 
@@ -612,6 +612,147 @@
             }
         })();
 
+        // === 랭킹(비정상 플레이 방지) 유틸 ===
+        // 참고: multiplying-decimals-main/index.html의 "createSignature + LIMITS + validator" 스타일을 간소화하여 적용
+        const RankingSecurity = (() => {
+            // ⚠️ 웹 클라이언트 특성상 완전한 보안은 서버 검증이 필수입니다.
+            // 그래도 단순 값 조작/스크립트 키디 수준의 공격은 대부분 차단/억제할 수 있습니다.
+            const CLIENT_VERSION = "avg-hero-anti-cheat-1";
+            const SECRET_KEY = "avg_hero_ranking_prevention_key_2025"; // 서버에서도 동일 키로 검증하면 효과 극대화
+
+            // 합리적 상한 (정상 고인물 플레이를 고려해 넉넉하게)
+            const LIMITS = Object.freeze({
+                MAX_NAME_LEN: 8,
+                MAX_LEVEL: 100000,
+                MAX_ATTEMPTS: 500000,
+                MAX_CORRECT: 500000,
+                MAX_COMBO: 500000,
+                MAX_SURVIVAL_SEC: 172800, // 48시간
+                // 속도 기반 제한 (물리적으로 불가능한 수준만 차단)
+                MAX_ATTEMPTS_PER_SEC: 8,  // 초당 8문제 시도(매우 넉넉)
+                MIN_MS_PER_ATTEMPT: 200   // 시도당 최소 0.2초(매우 넉넉)
+            });
+
+            // 간단 해시(서명) 생성: 서버와 동일 로직으로 맞추면 "서명 검증" 가능
+            function createSignature(payload) {
+                const raw = [
+                    payload.username,
+                    payload.level,
+                    payload.problems,
+                    payload.maxCombo,
+                    payload.survivalTime,
+                    payload.attempts,
+                    payload.sessionId,
+                    SECRET_KEY
+                ].join("_");
+
+                let hash = 0;
+                for (let i = 0; i < raw.length; i++) {
+                    hash = ((hash << 5) - hash) + raw.charCodeAt(i);
+                    hash |= 0; // 32bit
+                }
+                return Math.abs(hash).toString(16);
+            }
+
+            function clampInt(n, min, max) {
+                if (!Number.isFinite(n)) return min;
+                n = Math.trunc(n);
+                if (n < min) return min;
+                if (n > max) return max;
+                return n;
+            }
+
+            function sanitizeUsername(name) {
+                const trimmed = String(name || "").trim();
+                if (!trimmed) return "";
+                // 공백/제어문자 제거 + 길이 제한
+                const cleaned = trimmed.replace(/[\u0000-\u001f\u007f\s]+/g, "").slice(0, LIMITS.MAX_NAME_LEN);
+                // 너무 위험한 문자는 제거(표시/로그 깨짐 방지)
+                return cleaned.replace(/[<>`"']/g, "");
+            }
+
+            function getOrCreateSessionId() {
+                const key = "mathHeroSessionId";
+                const existing = localStorage.getItem(key);
+                if (existing && typeof existing === "string" && existing.length >= 8) return existing;
+                const bytes = new Uint8Array(16);
+                (crypto?.getRandomValues ? crypto.getRandomValues(bytes) : bytes.fill(Math.floor(Math.random() * 256)));
+                const id = Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
+                localStorage.setItem(key, id);
+                return id;
+            }
+
+            function buildPayload(game, username) {
+                const sessionId = getOrCreateSessionId();
+
+                // 원본 스탯 스냅샷
+                const rawLevel = Number(game?.player?.level);
+                const rawCorrect = Number(game?.stats?.correct);
+                const rawMaxCombo = Number(game?.stats?.maxCombo);
+                const rawAttempts = Number(game?.stats?.attempts);
+                const rawSurvival = Number.isFinite(game?.gameTime) ? Math.floor(game.gameTime / 1000) : 0;
+
+                const payload = {
+                    username: sanitizeUsername(username),
+                    level: clampInt(rawLevel, 1, LIMITS.MAX_LEVEL),
+                    problems: clampInt(rawCorrect, 0, LIMITS.MAX_CORRECT),
+                    maxCombo: clampInt(rawMaxCombo, 0, LIMITS.MAX_COMBO),
+                    survivalTime: clampInt(rawSurvival, 0, LIMITS.MAX_SURVIVAL_SEC),
+                    attempts: clampInt(rawAttempts, 0, LIMITS.MAX_ATTEMPTS),
+                    sessionId,
+                    clientVersion: CLIENT_VERSION,
+                    timestamp: new Date().toISOString()
+                };
+
+                // 정합성 보정
+                if (payload.problems > payload.attempts) payload.problems = payload.attempts;
+                if (payload.maxCombo > payload.problems) payload.maxCombo = payload.problems;
+
+                payload.signature = createSignature(payload);
+                return payload;
+            }
+
+            function isLikelyValid(payload) {
+                if (!payload.username) return { ok: false, reason: "NO_NAME" };
+                if (payload.username.length > LIMITS.MAX_NAME_LEN) return { ok: false, reason: "NAME_TOO_LONG" };
+                if (payload.level < 1 || payload.level > LIMITS.MAX_LEVEL) return { ok: false, reason: "BAD_LEVEL" };
+                if (payload.survivalTime < 0 || payload.survivalTime > LIMITS.MAX_SURVIVAL_SEC) return { ok: false, reason: "BAD_TIME" };
+                if (payload.attempts < 0 || payload.attempts > LIMITS.MAX_ATTEMPTS) return { ok: false, reason: "BAD_ATTEMPTS" };
+                if (payload.problems < 0 || payload.problems > payload.attempts) return { ok: false, reason: "BAD_CORRECT" };
+                if (payload.maxCombo < 0 || payload.maxCombo > payload.problems) return { ok: false, reason: "BAD_COMBO" };
+
+                // 속도 기반 비정상 감지(매크로/순간치트)
+                const t = Math.max(1, payload.survivalTime);
+                const attemptsPerSec = payload.attempts / t;
+                if (attemptsPerSec > LIMITS.MAX_ATTEMPTS_PER_SEC) return { ok: false, reason: "TOO_FAST" };
+                if (payload.attempts > 0 && (payload.survivalTime * 1000) < (payload.attempts * LIMITS.MIN_MS_PER_ATTEMPT)) {
+                    return { ok: false, reason: "IMPOSSIBLE_SPEED" };
+                }
+
+                // 서명 일치 확인(클라 내부 위변조/실수 방지)
+                const expected = createSignature(payload);
+                if (payload.signature !== expected) return { ok: false, reason: "BAD_SIGNATURE" };
+                return { ok: true };
+            }
+
+            // 간단 전송 레이트 리밋(반복 전송 공격 완화)
+            let lastSentAt = 0;
+            function canSendNow() {
+                const now = Date.now();
+                if (now - lastSentAt < 8000) return false; // 8초 쿨다운
+                lastSentAt = now;
+                return true;
+            }
+
+            return Object.freeze({
+                LIMITS,
+                sanitizeUsername,
+                buildPayload,
+                isLikelyValid,
+                canSendNow
+            });
+        })();
+
         // === 랭킹 시스템 ===
         const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz7VCG_pMIv7vygJAsROEZGpdy53wFdUiCqjlb-cVVpf7bSa7iz9aV4NWeF1BA2tzUw/exec";
         let currentUser = "";
@@ -619,7 +760,15 @@
         function checkNameAndStart() {
             const storedName = localStorage.getItem('mathHeroName');
             if (storedName) {
-                currentUser = storedName;
+                // 저장된 값도 정제(로컬스토리지 변조 대비)
+                currentUser = RankingSecurity.sanitizeUsername(storedName);
+                if (!currentUser) {
+                    localStorage.removeItem('mathHeroName');
+                    document.getElementById('start-screen').style.display = 'none';
+                    document.getElementById('name-modal').style.display = 'flex';
+                    document.getElementById('username-input').focus();
+                    return;
+                }
                 
                 // 이어하기 데이터 확인
                 if (localStorage.getItem('mathSaveData')) {
@@ -662,32 +811,36 @@
                 showToast("이름을 입력해주세요!");
                 return;
             }
-            currentUser = name;
-            localStorage.setItem('mathHeroName', name);
+            // 닉네임 정제(표시/서버 로그/단순 공격 방지)
+            currentUser = RankingSecurity.sanitizeUsername(name);
+            if (!currentUser) {
+                showToast("사용할 수 없는 이름입니다. 다시 입력해주세요!");
+                return;
+            }
+            localStorage.setItem('mathHeroName', currentUser);
             document.getElementById('name-modal').style.display = 'none';
             startGame();
         }
 
         function sendRanking() {
             if (!currentUser) return;
+            if (!RankingSecurity.canSendNow()) return; // 스팸 전송 완화
 
-            const data = {
-                username: currentUser,
-                level: game.player.level,
-                problems: game.stats.correct, 
-                maxCombo: game.stats.maxCombo,
-                survivalTime: Math.floor(game.gameTime / 1000),
-                attempts: game.stats.attempts, // 시도 횟수 추가
-                timestamp: new Date().toISOString()
-            };
+            const payload = RankingSecurity.buildPayload(game, currentUser);
+            const verdict = RankingSecurity.isLikelyValid(payload);
+            if (!verdict.ok) {
+                console.warn("Ranking blocked:", verdict.reason, payload);
+                return;
+            }
 
+            // 기존 Apps Script 호환을 위해 기존 필드 유지 + 추가 필드(서명/세션/버전) 포함
             fetch(APPS_SCRIPT_URL, {
                 method: "POST",
                 mode: "no-cors", // 중요: 구글 앱스 스크립트는 no-cors 필요
                 headers: {
                     "Content-Type": "application/json"
                 },
-                body: JSON.stringify(data)
+                body: JSON.stringify(payload)
             }).then(() => {
                 console.log("Ranking sent!");
             }).catch(err => console.error("Ranking error:", err));
@@ -869,11 +1022,20 @@
         let currentProblem = null;
         let isInputFocused = false;
 
+        function isAndroidDevice() {
+            const ua = navigator.userAgent || '';
+            return /Android/i.test(ua);
+        }
+
         class Game {
             constructor() {
                 this.state = 'start'; 
                 this.lastTime = 0;
                 this.mathGen = new MathGen();
+
+                // ✅ 안드로이드 모바일에서 화면이 줄어들 때(키보드 등) 캐릭터가 "급접근"하는 체감 완화:
+                // 플레이어/적/총알/충돌 반경을 1/3로 축소
+                this.scale = isAndroidDevice() ? (1/3) : 1;
                 
                 this.player = {
                     x: 0, y: 0,
@@ -996,7 +1158,7 @@
                 // 3. 후반(480초~): 스폰 속도 0.3초 (물량 폭주)
                 
                 let currentSpawnRate = 2000;
-                if (seconds < 240) {
+                if (seconds < 180) {
                     // 4분까지는 천천히 빨라짐
                     currentSpawnRate = 2000 - (seconds * 4); // 240초일 때 약 1000ms
                 } else if (seconds < 480) {
@@ -1040,7 +1202,8 @@
                     for (let j = this.enemies.length - 1; j >= 0; j--) {
                         let e = this.enemies[j];
                         let dist = Math.hypot(b.x - e.x, b.y - e.y);
-                        if (dist < e.radius + 5) {
+                        const bulletRadius = 8 * this.scale;
+                        if (dist < e.radius + bulletRadius) {
                             e.hp -= this.player.damage;
                             this.showDamage(e.x, e.y, this.player.damage);
                             this.bullets.splice(i, 1);
@@ -1059,7 +1222,8 @@
 
                     let dist = Math.hypot(this.player.x - e.x, this.player.y - e.y);
                     // 플레이어 피격 범위 조정 (30 -> 60)
-                    if (dist < 60 + e.radius) {
+                    const playerHitRadius = 60 * this.scale;
+                    if (dist < playerHitRadius + e.radius) {
                         if (!this.isInvincible) {
                             // 플레이어 피격 데미지 조정 (1.0 -> 0.5)
                             this.player.hp -= 0.5; 
@@ -1120,8 +1284,9 @@
 
                 // Bullets
                 ctx.fillStyle = '#4fd1c5';
+                const bulletRadius = 8 * this.scale;
                 this.bullets.forEach(b => {
-                    ctx.beginPath(); ctx.arc(b.x, b.y, 8, 0, Math.PI*2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(b.x, b.y, bulletRadius, 0, Math.PI*2); ctx.fill();
                 });
 
                 // Player
@@ -1129,12 +1294,13 @@
                 ctx.translate(this.player.x, this.player.y);
                 if (this.isInvincible && (Math.floor(Date.now()/100)%2===0)) ctx.globalAlpha = 0.5;
                 
-                // 플레이어 크기 2배 (70x70 -> 140x140)
-                ctx.drawImage(imgHero, -70, -70, 140, 140);
+                // 플레이어 크기 (모바일 안드로이드에서는 1/3 축소)
+                const half = 70 * this.scale;
+                ctx.drawImage(imgHero, -half, -half, half*2, half*2);
                 
                 if(this.isInvincible) {
                     ctx.beginPath(); ctx.strokeStyle='#00ffff'; ctx.lineWidth=3;
-                    ctx.arc(0,0,80,0,Math.PI*2); ctx.stroke();
+                    ctx.arc(0,0,80*this.scale,0,Math.PI*2); ctx.stroke();
                 }
                 ctx.restore();
 
@@ -1155,9 +1321,11 @@
             spawnEnemy() {
                 let x, y;
                 if(Math.random()<0.5) {
-                    x = Math.random()<0.5 ? -30 : canvas.width+30; y = Math.random()*canvas.height;
+                    const pad = 30 * this.scale;
+                    x = Math.random()<0.5 ? -pad : canvas.width+pad; y = Math.random()*canvas.height;
                 } else {
-                    x = Math.random()*canvas.width; y = Math.random()<0.5 ? -30 : canvas.height+30;
+                    const pad = 30 * this.scale;
+                    x = Math.random()*canvas.width; y = Math.random()<0.5 ? -pad : canvas.height+pad;
                 }
                 
                 const seconds = this.gameTime / 1000;
@@ -1182,8 +1350,9 @@
                 
                 const speed = Math.min(4.0, baseSpeed + Math.random() * 0.5);
 
-                // 적 크기 2배 (radius 25 -> 50)
-                this.enemies.push({ x, y, hp, maxHp: hp, radius: 50, speed: speed });
+                // 적 크기 (모바일 안드로이드에서는 1/3 축소)
+                const radius = 50 * this.scale;
+                this.enemies.push({ x, y, hp, maxHp: hp, radius, speed: speed });
             }
 
             fireBullet() {
@@ -1501,8 +1670,9 @@
         font-family: sans-serif;
     ">
         the-hero-robot-invasion<br>
-        made by gametudyssam 0.009
+        made by gametudyssam 0.01
     </div>
 
 </body>
 </html>
+
