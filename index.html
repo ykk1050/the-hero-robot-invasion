@@ -409,9 +409,18 @@
             color: #4fd1c5;
         }
         .my-rank {
-            background: rgba(79, 209, 197, 0.2);
+            background: linear-gradient(90deg, rgba(79, 209, 197, 0.3), rgba(79, 209, 197, 0.1));
+            border-left: 4px solid #4fd1c5;
             font-weight: bold;
             color: #fff;
+            box-shadow: 0 2px 8px rgba(79, 209, 197, 0.3);
+        }
+
+        /* 랭킹 기준 컬럼 음영 표시 */
+        .highlight-col {
+            background: rgba(255, 215, 0, 0.1);
+            font-weight: bold;
+            color: #ffd700;
         }
 
         /* 닉네임 입력 모달 */
@@ -508,10 +517,10 @@
         </div>
             <div class="input-group">
                 <input type="number" id="answer-input" class="answer-input" placeholder="정답 입력" onkeydown="checkEnter(event)">
-                <button class="submit-btn" onclick="submitAnswer()">발사 (제출)</button>
+                <button class="submit-btn" onclick="submitAnswer()">제출</button>
                 </div>
             <p style="font-size: 0.9rem; color: #aaa; text-align: center;">
-                정답을 맞추면 캐릭터가 업그레이드 됩니다!
+                정답을 맞추면 캐릭터를 업그레이드 할 수 있습니다!
             </p>
    </div>
 
@@ -558,9 +567,9 @@
     <div id="rank-modal" class="modal-overlay">
         <div class="modal-content" style="width: 600px; max-height: 80vh; overflow-y: auto;">
             <h2 style="color: #a18cd1; margin-top: 0;">🏆 글로벌 랭킹</h2>
-            
+            <p style="color: #888; font-size: 0.9rem; margin-bottom: 15px; text-align: center;">정답률 랭킹은 100문제 이상 푼 사람만 기록됩니다.</p>
+
             <div style="display:flex; gap:10px; justify-content:center; margin-bottom:15px;">
-                <button onclick="loadRanking('level')" class="shop-item" style="padding:5px 15px; color:white;">레벨순</button>
                 <button onclick="loadRanking('problems')" class="shop-item" style="padding:5px 15px; color:white;">푼 문제개수순</button>
                 <button onclick="loadRanking('combo')" class="shop-item" style="padding:5px 15px; color:white;">연속정답순</button>
                 <button onclick="loadRanking('survival')" class="shop-item" style="padding:5px 15px; color:white;">생존시간순</button>
@@ -673,13 +682,15 @@
 
             function getOrCreateSessionId() {
                 const key = "mathHeroSessionId";
-                const existing = localStorage.getItem(key);
-                if (existing && typeof existing === "string" && existing.length >= 8) return existing;
-                const bytes = new Uint8Array(16);
-                (crypto?.getRandomValues ? crypto.getRandomValues(bytes) : bytes.fill(Math.floor(Math.random() * 256)));
-                const id = Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
-                localStorage.setItem(key, id);
-                return id;
+                let existing = localStorage.getItem(key);
+                if (!existing || typeof existing !== "string" || existing.length < 8) {
+                    const bytes = new Uint8Array(16);
+                    (crypto?.getRandomValues ? crypto.getRandomValues(bytes) : bytes.fill(Math.floor(Math.random() * 256)));
+                    existing = Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
+                    localStorage.setItem(key, existing);
+                }
+                currentSessionId = existing; // 전역 변수에 저장
+                return existing;
             }
 
             function buildPayload(game, username) {
@@ -700,7 +711,7 @@
                     survivalTime: clampInt(rawSurvival, 0, LIMITS.MAX_SURVIVAL_SEC),
                     attempts: clampInt(rawAttempts, 0, LIMITS.MAX_ATTEMPTS),
                     sessionId,
-                    clientVersion: CLIENT_VERSION,
+                    clientVersion: 1, // 직접 숫자 할당 (안전하게)
                     timestamp: new Date().toISOString()
                 };
 
@@ -754,8 +765,34 @@
         })();
 
         // === 랭킹 시스템 ===
-        const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz7VCG_pMIv7vygJAsROEZGpdy53wFdUiCqjlb-cVVpf7bSa7iz9aV4NWeF1BA2tzUw/exec";
+        const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxXci5ANFIede5Dlto07n6fuqcQGoSqX65v8iMpTBQSGXC4KnGE0p_01dF0l4pacIy0/exec";
         let currentUser = "";
+        let currentSessionId = "";
+
+        // 닉네임 중복 체크 함수
+        async function checkUsernameAvailability(username, sessionId) {
+            try {
+                const checkUrl = `${APPS_SCRIPT_URL}?action=check_username&username=${encodeURIComponent(username)}&sessionId=${encodeURIComponent(sessionId)}`;
+                console.log("Checking username availability:", checkUrl);
+
+                const response = await fetch(checkUrl);
+                console.log("Username check response:", response.status, response.type);
+
+                if (response.type === 'opaque') {
+                    // no-cors 모드에서는 응답을 읽을 수 없음 - 일단 허용
+                    console.log("Opaque response - allowing username");
+                    return true;
+                }
+
+                const result = await response.json();
+                console.log("Username check result:", result);
+                return result.available === true;
+            } catch (err) {
+                console.error("닉네임 중복 체크 실패:", err);
+                // 네트워크 오류 시 일단 허용 (오프라인 대응)
+                return true;
+            }
+        }
 
         function checkNameAndStart() {
             const storedName = localStorage.getItem('mathHeroName');
@@ -812,14 +849,32 @@
                 return;
             }
             // 닉네임 정제(표시/서버 로그/단순 공격 방지)
-            currentUser = RankingSecurity.sanitizeUsername(name);
-            if (!currentUser) {
+            const candidateName = RankingSecurity.sanitizeUsername(name);
+            if (!candidateName) {
                 showToast("사용할 수 없는 이름입니다. 다시 입력해주세요!");
                 return;
             }
-            localStorage.setItem('mathHeroName', currentUser);
-            document.getElementById('name-modal').style.display = 'none';
-            startGame();
+
+            // 세션 ID 생성
+            const sessionId = RankingSecurity.getOrCreateSessionId();
+
+            // 닉네임 중복 체크 (서버에 등록된 이름인지 확인)
+            checkUsernameAvailability(candidateName, sessionId).then(isAvailable => {
+                if (!isAvailable) {
+                    showToast("이미 사용중인 이름입니다. 다른 이름을 선택해주세요!");
+                    return;
+                }
+
+                // 사용 가능한 이름이면 저장
+                currentUser = candidateName;
+                localStorage.setItem('mathHeroName', currentUser);
+                localStorage.setItem('mathHeroSessionId', sessionId); // 세션 ID도 저장
+                document.getElementById('name-modal').style.display = 'none';
+                startGame();
+            }).catch(err => {
+                console.error("닉네임 확인 실패:", err);
+                showToast("닉네임 확인에 실패했습니다. 다시 시도해주세요.");
+            });
         }
 
         function sendRanking() {
@@ -834,21 +889,48 @@
             }
 
             // 기존 Apps Script 호환을 위해 기존 필드 유지 + 추가 필드(서명/세션/버전) 포함
+            console.log("Sending ranking to:", APPS_SCRIPT_URL);
+            console.log("Payload:", payload);
+
             fetch(APPS_SCRIPT_URL, {
                 method: "POST",
                 mode: "no-cors", // 중요: 구글 앱스 스크립트는 no-cors 필요
+                keepalive: true, // 추가: 페이지 종료 시에도 전송 보장
                 headers: {
                     "Content-Type": "application/json"
                 },
                 body: JSON.stringify(payload)
-            }).then(() => {
-                console.log("Ranking sent!");
-            }).catch(err => console.error("Ranking error:", err));
+            }).then(response => {
+                console.log("Ranking response status:", response.status);
+                console.log("Ranking response type:", response.type);
+                console.log("Ranking sent successfully!");
+            }).catch(err => {
+                console.error("Ranking error:", err);
+                console.error("Error details:", {
+                    message: err.message,
+                    stack: err.stack,
+                    url: APPS_SCRIPT_URL
+                });
+
+                // 사용자에게 더 친화적인 메시지 표시 (토스트나 콘솔)
+                showToast("랭킹 전송 실패 - 네트워크 연결을 확인해주세요.");
+            });
         }
 
         function openRankingModal() {
             document.getElementById('rank-modal').style.display = 'flex';
-            loadRanking('level');
+            loadRanking('problems');
+
+            // 내 기록에 더 강한 음영 표시 (기존 my-rank 클래스 강화)
+            setTimeout(() => {
+                const myRows = document.querySelectorAll('.my-rank');
+                myRows.forEach(row => {
+                    row.style.background = 'linear-gradient(90deg, rgba(79, 209, 197, 0.3), rgba(79, 209, 197, 0.1))';
+                    row.style.borderLeft = '4px solid #4fd1c5';
+                    row.style.fontWeight = 'bold';
+                    row.style.color = '#fff';
+                });
+            }, 500);
         }
 
         function loadRanking(type) {
@@ -857,6 +939,14 @@
 
             // 내 기록 강조를 위해 username 파라미터 추가
             const url = `${APPS_SCRIPT_URL}?type=${type}&username=${encodeURIComponent(currentUser || '')}`;
+
+            // 각 랭킹 타입별 강조할 컬럼 인덱스 (LV 열 제거로 인덱스 조정)
+            const highlightColumns = {
+                'problems': 2,   // 정답 문제 개수 컬럼
+                'combo': 3,      // 최대콤보 컬럼
+                'survival': 4,   // 생존 컬럼
+                'accuracy': 5    // 정답률 컬럼
+            };
 
             fetch(url)
             .then(res => res.json())
@@ -867,23 +957,22 @@
                             <tr>
                                 <th>순위</th>
                                 <th>이름</th>
-                                <th>LV</th>
-                                <th>정답</th>
-                                <th>최대콤보</th>
-                                <th>생존</th>
-                                <th>정답률</th>
+                                <th>정답 문제 개수</th>
+                                <th>연속정답수</th>
+                                <th>생존시간</th>
+                                <th>정답률(100문제 이상)</th>
                             </tr>
                         </thead>
                         <tbody>
                 `;
-                
+
                 if (data.length === 0) {
                     html += `<tr><td colspan="7">등록된 랭킹이 없습니다.</td></tr>`;
                 } else {
                     data.forEach((row, index) => {
                         const isMe = row.username === currentUser;
                         const rank = row.rank || (index + 1);
-                        
+
                         // 시간 포맷팅 (초 -> 분:초)
                         const sec = row.survivalTime || 0;
                         const min = Math.floor(sec / 60);
@@ -896,15 +985,17 @@
                         const correct = row.problems || 0;
                         if (attempts > 0) acc = ((correct / attempts) * 100).toFixed(1);
 
+                        // 강조할 컬럼 결정
+                        const highlightCol = highlightColumns[type] || -1;
+
                         html += `
                             <tr class="${isMe ? 'my-rank' : ''}">
                                 <td>${rank}</td>
                                 <td>${row.username}</td>
-                                <td>${row.level}</td>
-                                <td>${row.problems}</td>
-                                <td>${row.maxCombo}</td>
-                                <td>${timeStr}</td>
-                                <td>${acc}%</td>
+                                <td class="${highlightCol === 2 ? 'highlight-col' : ''}">${row.problems}</td>
+                                <td class="${highlightCol === 3 ? 'highlight-col' : ''}">${row.maxCombo}</td>
+                                <td class="${highlightCol === 4 ? 'highlight-col' : ''}">${timeStr}</td>
+                                <td class="${highlightCol === 5 ? 'highlight-col' : ''}">${acc}%</td>
                             </tr>
                         `;
                     });
@@ -1670,9 +1761,8 @@
         font-family: sans-serif;
     ">
         the-hero-robot-invasion<br>
-        made by gametudyssam 0.01
+        made by gametudyssam 0.011
     </div>
 
 </body>
 </html>
-
