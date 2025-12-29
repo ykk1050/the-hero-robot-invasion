@@ -891,32 +891,59 @@
         }
 
         async function sendRanking() {
-            if (!currentUser) return;
-            if (!RankingSecurity.canSendNow()) return; // 스팸 전송 완화
+            if (!currentUser) {
+                console.log("랭킹 전송 중단: 사용자 없음");
+                return;
+            }
+            if (!RankingSecurity.canSendNow()) {
+                console.log("랭킹 전송 중단: 스팸 방지");
+                return; // 스팸 전송 완화
+            }
 
             const payload = RankingSecurity.buildPayload(game, currentUser);
+            console.log("랭킹 전송 준비:", payload);
+
             const verdict = RankingSecurity.isLikelyValid(payload);
             if (!verdict.ok) {
-                console.warn("Ranking blocked:", verdict.reason, payload);
+                console.warn("랭킹 전송 차단:", verdict.reason, payload);
                 return;
             }
 
             // 기존 Apps Script 호환을 위해 기존 필드 유지 + 추가 필드(서명/세션/버전) 포함
-            console.log("Sending ranking to:", APPS_SCRIPT_URL);
-            console.log("🔥 FULL PAYLOAD CHECK:", JSON.stringify(payload, null, 2)); // 데이터 확인용 로그 추가
-            
+            console.log("랭킹 서버로 전송 시도:", APPS_SCRIPT_URL);
+            console.log("📊 랭킹 데이터:", JSON.stringify(payload, null, 2));
+
             try {
-                const response = await fetch(APPS_SCRIPT_URL, {
-                    method: "POST",
-                    mode: "no-cors", 
-                    keepalive: true,
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload)
+                // Apps Script가 POST를 지원하지 않을 수 있으므로 GET 파라미터로 전송
+                const params = new URLSearchParams();
+                Object.keys(payload).forEach(key => {
+                    params.append(key, String(payload[key]));
                 });
-                console.log("Ranking sent successfully!");
+                const rankingUrl = `${APPS_SCRIPT_URL}?${params.toString()}`;
+
+                console.log("랭킹 GET URL:", rankingUrl);
+
+                // 타임아웃 추가
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000); // 10초 타임아웃
+
+                const response = await fetch(rankingUrl, {
+                    method: "GET",
+                    mode: "no-cors",
+                    keepalive: true,
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+                console.log("✅ 랭킹 전송 완료 (GET 방식)");
+                // no-cors 모드에서는 실제 응답을 확인할 수 없으므로 성공으로 간주
             } catch(err) {
-                console.error("Ranking error:", err);
-                alert("⚠️ 랭킹 서버 전송 실패! (네트워크 상태를 확인하세요)");
+                if (err.name === 'AbortError') {
+                    console.error("❌ 랭킹 전송 타임아웃");
+                } else {
+                    console.error("❌ 랭킹 전송 실패:", err);
+                }
+                // no-cors 모드에서는 실제 실패 여부를 알 수 없으므로 조용히 실패 처리
             }
         }
 
@@ -1594,18 +1621,18 @@
                     isNewRecord = true;
                 }
 
-                // 랭킹 전송 (대기)
-                try {
-                    await sendRanking();
-                } catch(e) {
-                    console.error("Ranking send failed", e);
-                }
-                
+                // 랭킹 전송 (비동기로 처리 - 페이지 리로드와 무관하게)
+                sendRanking().then(() => {
+                    console.log("랭킹 전송 성공");
+                }).catch(e => {
+                    console.error("랭킹 전송 실패:", e);
+                });
+
                 localStorage.removeItem('mathSaveData');
 
                 let msg = `게임 오버!\n생존 시간: ${this.formatTime(this.gameTime)}\n이번 판 해결: ${this.stats.correct}문제`;
                 if(isNewRecord) msg += `\n🎉 새로운 최고 기록 달성!`;
-                
+
                 // UI 렌더링 루프 등 확실히 종료 후 알림
                 setTimeout(() => {
                     alert(msg);
@@ -1823,7 +1850,7 @@
         font-family: sans-serif;
     ">
         the-hero-robot-invasion<br>
-        made by gametudyssam 0.012
+        made by gametudyssam 0.013
     </div>
 
 </body>
