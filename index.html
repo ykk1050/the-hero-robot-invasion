@@ -770,7 +770,7 @@
         })();
 
         // === 랭킹 시스템 ===
-        const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxRolA0mIHkm9TWm0YUW10W1vkuRKis9UMmWvELGZnpv2D736i30D2lFuCYOIcOD9bH5A/exec";
+        const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyfChnGng4MsR5VIaRJSJvpx0q_bUIYSVJcxUQd9DJQkdTCEanB1Z6-XeIyVSldofq2/exec";
         let currentUser = "";
         let currentSessionId = "";
 
@@ -963,8 +963,9 @@
                 console.log("📡 fetch 요청 시작...");
                 const response = await fetch(APPS_SCRIPT_URL, {
                     method: "POST",
-                    mode: "no-cors",  // CORS 제한을 우회
+                    mode: "cors",
                     keepalive: true,  // 페이지 언로드 시에도 요청 완료
+                    redirect: "follow",
                     headers: {
                         "Content-Type": "application/json",
                     },
@@ -973,11 +974,18 @@
                 });
 
                 clearTimeout(timeoutId);
-                console.log("✅ HTTP 요청 완료 (no-cors 모드 - 응답 내용 확인 불가)");
-                console.log("📝 GAS 서버의 실제 응답은 Apps Script 실행 로그에서 확인해야 함");
 
-                // 실제 저장 성공 여부는 GAS 로그에서 확인해야 함
-                // 클라이언트에서는 no-cors 모드로 인해 응답을 확인할 수 없음
+                if (response.ok) {
+                    console.log("✅ HTTP 요청 성공:", response.status);
+                    try {
+                        const result = await response.json();
+                        console.log("📥 서버 응답:", result);
+                    } catch (e) {
+                        console.log("📝 서버 응답 파싱 불가 (텍스트 응답일 수 있음)");
+                    }
+                } else {
+                    console.error("❌ HTTP 요청 실패:", response.status, response.statusText);
+                }
 
             } catch(err) {
                 if (err.name === 'AbortError') {
@@ -2015,10 +2023,8 @@
         font-family: sans-serif;
     ">
         the-hero-robot-invasion<br>
-        made by gametudyssam 0.021
+        made by gametudyssam 0.022
     </div>
 
 </body>
 </html>
-
-
