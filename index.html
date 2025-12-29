@@ -456,6 +456,7 @@
                     </div>
                     <!-- 상세 스탯 패널 추가 -->
                     <div class="stats-panel">
+                        <div>닉네임: <span id="user-nickname" style="color:#4fd1c5">알 수 없음</span></div>
                         <div>난이도: <span id="diff-display" style="color:#4fd1c5">평화</span></div>
                         <div style="font-size: 0.8rem; margin-top:5px; color:#aaa;">
                             ⚔️ 내 공격력: <span id="stat-dmg">25</span> <br>
@@ -967,9 +968,6 @@
             const container = document.getElementById('rank-list-container');
             container.innerHTML = "데이터 불러오는 중...";
 
-            // 내 기록 강조를 위해 username 파라미터 추가
-            const url = `${APPS_SCRIPT_URL}?type=${type}&username=${encodeURIComponent(currentUser || '')}`;
-
             // 각 랭킹 타입별 강조할 컬럼 인덱스 (LV 열 제거로 인덱스 조정)
             const highlightColumns = {
                 'problems': 2,   // 정답 문제 개수 컬럼
@@ -978,65 +976,87 @@
                 'accuracy': 5    // 정답률 컬럼
             };
 
-            fetch(url)
-            .then(res => res.json())
-            .then(data => {
-                let html = `
-                    <table class="rank-table">
-                        <thead>
-                            <tr>
-                                <th>순위</th>
-                                <th>이름</th>
-                                <th>정답 문제 개수</th>
-                                <th>연속정답수</th>
-                                <th>생존시간</th>
-                                <th>정답률(100문제 이상)</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                `;
-
-                if (data.length === 0) {
-                    html += `<tr><td colspan="7">등록된 랭킹이 없습니다.</td></tr>`;
-                } else {
-                    data.forEach((row, index) => {
-                        const isMe = row.username === currentUser;
-                        const rank = row.rank || (index + 1);
-
-                        // 시간 포맷팅 (초 -> 분:초)
-                        const sec = row.survivalTime || 0;
-                        const min = Math.floor(sec / 60);
-                        const s = sec % 60;
-                        const timeStr = `${min}:${s.toString().padStart(2,'0')}`;
-
-                        // 정답률 계산 (attempts가 없으면 0% 처리)
-                        let acc = 0;
-                        const attempts = row.attempts || 0; // 서버에서 받아야 함
-                        const correct = row.problems || 0;
-                        if (attempts > 0) acc = ((correct / attempts) * 100).toFixed(1);
-
-                        // 강조할 컬럼 결정
-                        const highlightCol = highlightColumns[type] || -1;
-
-                        html += `
-                            <tr class="${isMe ? 'my-rank' : ''}">
-                                <td>${rank}</td>
-                                <td>${row.username}</td>
-                                <td class="${highlightCol === 2 ? 'highlight-col' : ''}">${row.problems}</td>
-                                <td class="${highlightCol === 3 ? 'highlight-col' : ''}">${row.maxCombo}</td>
-                                <td class="${highlightCol === 4 ? 'highlight-col' : ''}">${timeStr}</td>
-                                <td class="${highlightCol === 5 ? 'highlight-col' : ''}">${acc}%</td>
-                            </tr>
-                        `;
-                    });
+            // 로컬 랭킹 데이터 불러오기
+            let localRankings = [];
+            const saved = localStorage.getItem('localRankings');
+            if (saved) {
+                try {
+                    localRankings = JSON.parse(saved);
+                } catch (e) {
+                    console.error("Local rankings corrupted", e);
+                    localRankings = [];
                 }
-                html += `</tbody></table>`;
-                container.innerHTML = html;
-            })
-            .catch(err => {
-                container.innerHTML = "랭킹을 불러오는데 실패했습니다.";
-                console.error(err);
-            });
+            }
+
+            // 랭킹 정렬
+            let sortedData = [];
+            if (type === 'problems') {
+                sortedData = localRankings.sort((a, b) => b.problems - a.problems);
+            } else if (type === 'combo') {
+                sortedData = localRankings.sort((a, b) => b.maxCombo - a.maxCombo);
+            } else if (type === 'survival') {
+                sortedData = localRankings.sort((a, b) => b.survivalTime - a.survivalTime);
+            } else if (type === 'accuracy') {
+                sortedData = localRankings
+                    .filter(r => r.attempts >= 100) // 100문제 이상만
+                    .sort((a, b) => {
+                        const accA = a.attempts > 0 ? (a.problems / a.attempts) : 0;
+                        const accB = b.attempts > 0 ? (b.problems / b.attempts) : 0;
+                        return accB - accA;
+                    });
+            }
+
+            let html = `
+                <table class="rank-table">
+                    <thead>
+                        <tr>
+                            <th>순위</th>
+                            <th>이름</th>
+                            <th>정답 문제 개수</th>
+                            <th>연속정답수</th>
+                            <th>생존시간</th>
+                            <th>정답률(100문제 이상)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            if (sortedData.length === 0) {
+                html += `<tr><td colspan="7">등록된 랭킹이 없습니다.</td></tr>`;
+            } else {
+                sortedData.forEach((row, index) => {
+                    const isMe = row.username === currentUser;
+                    const rank = index + 1;
+
+                    // 시간 포맷팅 (초 -> 분:초)
+                    const sec = row.survivalTime || 0;
+                    const min = Math.floor(sec / 60);
+                    const s = sec % 60;
+                    const timeStr = `${min}:${s.toString().padStart(2,'0')}`;
+
+                    // 정답률 계산
+                    let acc = 0;
+                    const attempts = row.attempts || 0;
+                    const correct = row.problems || 0;
+                    if (attempts > 0) acc = ((correct / attempts) * 100).toFixed(1);
+
+                    // 강조할 컬럼 결정
+                    const highlightCol = highlightColumns[type] || -1;
+
+                    html += `
+                        <tr class="${isMe ? 'my-rank' : ''}">
+                            <td>${rank}</td>
+                            <td>${row.username}</td>
+                            <td class="${highlightCol === 2 ? 'highlight-col' : ''}">${correct}</td>
+                            <td class="${highlightCol === 3 ? 'highlight-col' : ''}">${row.maxCombo || 0}</td>
+                            <td class="${highlightCol === 4 ? 'highlight-col' : ''}">${timeStr}</td>
+                            <td class="${highlightCol === 5 ? 'highlight-col' : ''}">${attempts >= 100 ? acc + '%' : '-'}</td>
+                        </tr>
+                    `;
+                });
+            }
+            html += `</tbody></table>`;
+            container.innerHTML = html;
         }
 
         // === 1. 수학 문제 생성기 ===
@@ -1254,16 +1274,11 @@
                 document.getElementById('answer-input').focus();
 
                 currentProblem = this.mathGen.generateProblem(this.player.level);
-                
-                // 문제 생성 시 카운트 증가
-                this.stats.totalProblems++;
-                this.globalStats.totalProblems++; // 누적 증가
-                
-                // 누적 통계 저장
-                localStorage.setItem('mathGlobalTotalProblems', this.globalStats.totalProblems);
-                
+                currentProblem.attempted = false; // 새로운 문제이므로 시도 플래그 초기화
+
+                // 문제 생성 시에는 카운트하지 않고, 실제 답을 시도할 때 카운트
                 this.updateHUD(); // 즉시 반영
-                
+
                 document.getElementById('problem-text').innerText = `[LV.${this.player.level}]\n${currentProblem.question}`;
             }
 
@@ -1534,6 +1549,9 @@
                 document.getElementById('hpText').innerText = `HP ${Math.ceil(this.player.hp)}/${this.player.maxHp}`;
                 document.getElementById('goldDisplay').innerText = this.gold;
 
+                // 닉네임 표시
+                document.getElementById('user-nickname').innerText = currentUser || '알 수 없음';
+
                 // 난이도 표시
                 const sec = this.gameTime / 1000;
                 let diffText = "평화";
@@ -1621,6 +1639,9 @@
                     isNewRecord = true;
                 }
 
+                // 로컬 랭킹 저장 (오프라인 랭킹 시스템)
+                this.saveLocalRanking();
+
                 // 랭킹 전송 (비동기로 처리 - 페이지 리로드와 무관하게)
                 sendRanking().then(() => {
                     console.log("랭킹 전송 성공");
@@ -1659,28 +1680,83 @@
                 localStorage.setItem('mathSaveData', JSON.stringify(saveData));
             }
 
+            saveLocalRanking() {
+                if (!currentUser) return;
+
+                const survivalTime = Math.floor(this.gameTime / 1000);
+                const accuracy = this.stats.attempts > 0 ? ((this.stats.correct / this.stats.attempts) * 100).toFixed(1) : 0;
+
+                const rankingEntry = {
+                    username: currentUser,
+                    level: this.player.level,
+                    problems: this.stats.correct,
+                    maxCombo: this.stats.maxCombo,
+                    survivalTime: survivalTime,
+                    attempts: this.stats.attempts,
+                    timestamp: new Date().toISOString()
+                };
+
+                // 기존 로컬 랭킹 불러오기
+                let localRankings = [];
+                const saved = localStorage.getItem('localRankings');
+                if (saved) {
+                    try {
+                        localRankings = JSON.parse(saved);
+                    } catch (e) {
+                        console.error("Local rankings corrupted", e);
+                        localRankings = [];
+                    }
+                }
+
+                // 동일 사용자의 기존 기록 찾기
+                const existingIndex = localRankings.findIndex(r => r.username === currentUser);
+
+                if (existingIndex >= 0) {
+                    // 기존 기록 업데이트 (더 좋은 기록으로)
+                    const existing = localRankings[existingIndex];
+                    if (rankingEntry.level > existing.level ||
+                        rankingEntry.problems > existing.problems ||
+                        rankingEntry.maxCombo > existing.maxCombo ||
+                        rankingEntry.survivalTime > existing.survivalTime) {
+                        localRankings[existingIndex] = rankingEntry;
+                    }
+                } else {
+                    // 새 기록 추가
+                    localRankings.push(rankingEntry);
+                }
+
+                // 최대 100개 기록 유지
+                if (localRankings.length > 100) {
+                    localRankings = localRankings.slice(-100);
+                }
+
+                // 저장
+                localStorage.setItem('localRankings', JSON.stringify(localRankings));
+                console.log("로컬 랭킹 저장됨:", rankingEntry);
+            }
+
             loadGame() {
                 const json = localStorage.getItem('mathSaveData');
                 if (!json) return false;
-                
+
                 try {
                     const data = JSON.parse(json);
                     this.gameTime = data.gameTime || 0;
-                    
+
                     // 플레이어 스탯 복구
                     Object.assign(this.player, data.player);
                     this.gold = data.gold;
                     this.skills = data.skills;
                     Object.assign(this.stats, data.stats);
                     this.spawnRate = data.spawnRate;
-                    
+
                     // HUD 갱신
                     this.updateHUD();
                     this.updateSkillDock();
-                    
+
                     // 문제 텍스트 갱신 (마지막 레벨 기준 문제 재생성)
                     this.nextProblem();
-                    
+
                     return true;
                 } catch (e) {
                     console.error("Save file corrupted", e);
@@ -1704,15 +1780,23 @@
         function submitAnswer() {
             const input = document.getElementById('answer-input');
             const val = parseInt(input.value);
-            
+
             if (isNaN(val)) {
                 showToast("숫자를 입력하세요.");
                 return;
             }
 
-            // 이번 판 통계 갱신
+            // 이번 판 통계 갱신 (첫 제출시에만 문제 수 카운트)
+            if (!currentProblem.attempted) {
+                currentProblem.attempted = true;
+                game.stats.totalProblems++;
+                game.globalStats.totalProblems++; // 누적 증가
+                // 누적 통계 저장
+                localStorage.setItem('mathGlobalTotalProblems', game.globalStats.totalProblems);
+            }
+
             game.stats.attempts++;
-            
+
             // 누적 통계 갱신
             game.globalStats.attempts++;
             localStorage.setItem('mathGlobalAttempts', game.globalStats.attempts);
@@ -1850,7 +1934,7 @@
         font-family: sans-serif;
     ">
         the-hero-robot-invasion<br>
-        made by gametudyssam 0.013
+        made by gametudyssam 0.014
     </div>
 
 </body>
