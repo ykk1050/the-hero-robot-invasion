@@ -499,13 +499,13 @@
         
         <!-- 학습 통계 패널 추가 -->
         <div class="math-stats">
-            <div class="stat-row"><span>🔢 총 문제 수</span><span id="stat-total-problems">1</span></div>
-            <div class="stat-row"><span>✏️ 풀이 시도 횟수</span><span id="stat-attempts">0</span></div>
-            <div class="stat-row"><span>⭕ 정답 횟수</span><span id="stat-correct">0</span></div>
-            <div class="stat-row"><span>❌ 오답 횟수</span><span id="stat-wrong">0</span></div>
-            <div class="stat-row"><span>🔥 현재 게임 연속 정답수</span><span id="stat-combo" style="color:#f6ad55">0</span></div>
-            <div class="stat-row"><span>🏆 최고 연속 정답수 기록</span><span id="stat-max-combo">0</span></div>
-            <div class="stat-row"><span>📊 정답률</span><span id="stat-accuracy">0%</span></div>
+            <div class="stat-row"><span>🔢 총 문제 수 (누적)</span><span id="stat-total-problems">0</span></div>
+            <div class="stat-row"><span>✏️ 총 풀이 시도 (누적)</span><span id="stat-attempts">0</span></div>
+            <div class="stat-row"><span>⭕ 총 정답 (누적)</span><span id="stat-correct">0</span></div>
+            <div class="stat-row"><span>❌ 총 오답 (누적)</span><span id="stat-wrong">0</span></div>
+            <div class="stat-row"><span>🔥 현재 게임 연속 정답</span><span id="stat-combo" style="color:#f6ad55">0</span></div>
+            <div class="stat-row"><span>🏆 역대 최고 연속 정답</span><span id="stat-max-combo">0</span></div>
+            <div class="stat-row"><span>📊 정답률 (누적)</span><span id="stat-accuracy">0%</span></div>
         </div>
 
         <hr style="border: 0; border-top: 1px solid #4a5568; margin: 15px 0;">
@@ -750,7 +750,7 @@
             let lastSentAt = 0;
             function canSendNow() {
                 const now = Date.now();
-                if (now - lastSentAt < 8000) return false; // 8초 쿨다운
+                if (now - lastSentAt < 1000) return false; // 테스트 위해 1초로 단축
                 lastSentAt = now;
                 return true;
             }
@@ -760,22 +760,27 @@
                 sanitizeUsername,
                 buildPayload,
                 isLikelyValid,
-                canSendNow
+                canSendNow,
+                getOrCreateSessionId // 외부 공개 추가
             });
         })();
 
         // === 랭킹 시스템 ===
-        const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxXci5ANFIede5Dlto07n6fuqcQGoSqX65v8iMpTBQSGXC4KnGE0p_01dF0l4pacIy0/exec";
+        const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby2NRtsyaITKrGgR9rYRBTWgQw9kf5PRAVSpDiEt3VGSJ_MIiYXCzed5U1VPTrrUVEe/exec";
         let currentUser = "";
         let currentSessionId = "";
 
         // 닉네임 중복 체크 함수
         async function checkUsernameAvailability(username, sessionId) {
             try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 3000); // 3초 타임아웃
+
                 const checkUrl = `${APPS_SCRIPT_URL}?action=check_username&username=${encodeURIComponent(username)}&sessionId=${encodeURIComponent(sessionId)}`;
                 console.log("Checking username availability:", checkUrl);
 
-                const response = await fetch(checkUrl);
+                const response = await fetch(checkUrl, { signal: controller.signal });
+                clearTimeout(timeoutId);
                 console.log("Username check response:", response.status, response.type);
 
                 if (response.type === 'opaque') {
@@ -788,14 +793,22 @@
                 console.log("Username check result:", result);
                 return result.available === true;
             } catch (err) {
-                console.error("닉네임 중복 체크 실패:", err);
-                // 네트워크 오류 시 일단 허용 (오프라인 대응)
+                if (err.name === 'AbortError') {
+                    console.log("Username check timed out - allowing username");
+                } else {
+                    console.error("닉네임 중복 체크 실패:", err);
+                }
+                // 타임아웃 또는 네트워크 오류 시 일단 허용
                 return true;
             }
         }
 
         function checkNameAndStart() {
             const storedName = localStorage.getItem('mathHeroName');
+            
+            // 세션 ID가 없으면 지금 생성 (중요!)
+            RankingSecurity.getOrCreateSessionId(); 
+
             if (storedName) {
                 // 저장된 값도 정제(로컬스토리지 변조 대비)
                 currentUser = RankingSecurity.sanitizeUsername(storedName);
@@ -877,7 +890,7 @@
             });
         }
 
-        function sendRanking() {
+        async function sendRanking() {
             if (!currentUser) return;
             if (!RankingSecurity.canSendNow()) return; // 스팸 전송 완화
 
@@ -890,31 +903,21 @@
 
             // 기존 Apps Script 호환을 위해 기존 필드 유지 + 추가 필드(서명/세션/버전) 포함
             console.log("Sending ranking to:", APPS_SCRIPT_URL);
-            console.log("Payload:", payload);
-
-            fetch(APPS_SCRIPT_URL, {
-                method: "POST",
-                mode: "no-cors", // 중요: 구글 앱스 스크립트는 no-cors 필요
-                keepalive: true, // 추가: 페이지 종료 시에도 전송 보장
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify(payload)
-            }).then(response => {
-                console.log("Ranking response status:", response.status);
-                console.log("Ranking response type:", response.type);
-                console.log("Ranking sent successfully!");
-            }).catch(err => {
-                console.error("Ranking error:", err);
-                console.error("Error details:", {
-                    message: err.message,
-                    stack: err.stack,
-                    url: APPS_SCRIPT_URL
+            console.log("🔥 FULL PAYLOAD CHECK:", JSON.stringify(payload, null, 2)); // 데이터 확인용 로그 추가
+            
+            try {
+                const response = await fetch(APPS_SCRIPT_URL, {
+                    method: "POST",
+                    mode: "no-cors", 
+                    keepalive: true,
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
                 });
-
-                // 사용자에게 더 친화적인 메시지 표시 (토스트나 콘솔)
-                showToast("랭킹 전송 실패 - 네트워크 연결을 확인해주세요.");
-            });
+                console.log("Ranking sent successfully!");
+            } catch(err) {
+                console.error("Ranking error:", err);
+                alert("⚠️ 랭킹 서버 전송 실패! (네트워크 상태를 확인하세요)");
+            }
         }
 
         function openRankingModal() {
@@ -1151,7 +1154,7 @@
                 this.lastSpawn = 0;
                 this.gameTime = 0; // 게임 진행 시간 추적
 
-                // 통계 데이터
+                // 현재 게임 통계
                 this.stats = {
                     totalProblems: 0, 
                     attempts: 0,
@@ -1161,9 +1164,21 @@
                     maxCombo: 0
                 };
 
+                // 누적 통계 (로봇공격 방어 지원실 표시용)
+                this.globalStats = {
+                    totalProblems: parseInt(localStorage.getItem('mathGlobalTotalProblems')) || 0,
+                    attempts: parseInt(localStorage.getItem('mathGlobalAttempts')) || 0,
+                    correct: parseInt(localStorage.getItem('mathGlobalCorrect')) || 0,
+                    wrong: parseInt(localStorage.getItem('mathGlobalWrong')) || 0
+                };
+
                 // 로컬 스토리지에서 최고 기록 불러오기
                 this.highScore = localStorage.getItem('mathHighLv') || 1;
                 this.maxTime = parseFloat(localStorage.getItem('mathMaxTime')) || 0; // ms 단위
+                
+                // 역대 최고 콤보 등 추가 기록
+                this.bestCombo = parseInt(localStorage.getItem('mathBestCombo')) || 0;
+                this.bestProblems = parseInt(localStorage.getItem('mathBestProblems')) || 0;
 
                 window.addEventListener('resize', () => this.resize());
                 // 페이지 종료 시 저장
@@ -1212,10 +1227,14 @@
                 document.getElementById('answer-input').focus();
 
                 currentProblem = this.mathGen.generateProblem(this.player.level);
-                // 문제 생성 시 카운트 증가 (첫 문제는 start()에서 호출되므로 초기값 1로 설정했음)
-                // 하지만 nextProblem이 호출될 때마다 증가시키는 것이 로직상 깔끔함.
-                // start()에서 nextProblem을 부르므로 초기값을 0으로 하고 여기서 증가시킴.
-                this.stats.totalProblems++; 
+                
+                // 문제 생성 시 카운트 증가
+                this.stats.totalProblems++;
+                this.globalStats.totalProblems++; // 누적 증가
+                
+                // 누적 통계 저장
+                localStorage.setItem('mathGlobalTotalProblems', this.globalStats.totalProblems);
+                
                 this.updateHUD(); // 즉시 반영
                 
                 document.getElementById('problem-text').innerText = `[LV.${this.player.level}]\n${currentProblem.question}`;
@@ -1509,17 +1528,22 @@
                 document.getElementById('stat-cnt').innerText = this.player.projectileCount;
                 document.getElementById('enemy-dmg').innerText = "0.5"; // 현재 고정 데미지
 
-                // 학습 통계 표시
-                document.getElementById('stat-total-problems').innerText = this.stats.totalProblems;
-                document.getElementById('stat-attempts').innerText = this.stats.attempts;
-                document.getElementById('stat-correct').innerText = this.stats.correct;
-                document.getElementById('stat-wrong').innerText = this.stats.wrong;
-                document.getElementById('stat-combo').innerText = this.stats.combo;
-                document.getElementById('stat-max-combo').innerText = this.stats.maxCombo;
+                // 학습 통계 표시 (누적)
+                document.getElementById('stat-total-problems').innerText = this.globalStats.totalProblems;
+                document.getElementById('stat-attempts').innerText = this.globalStats.attempts;
+                document.getElementById('stat-correct').innerText = this.globalStats.correct;
+                document.getElementById('stat-wrong').innerText = this.globalStats.wrong;
                 
+                // 콤보는 현재 게임 기준
+                document.getElementById('stat-combo').innerText = this.stats.combo;
+                // 최대 콤보는 역대 최고 기록
+                const displayMaxCombo = Math.max(this.stats.maxCombo, this.bestCombo);
+                document.getElementById('stat-max-combo').innerText = `(최고: ${displayMaxCombo})`;
+                
+                // 정답률 (누적)
                 let acc = 0;
-                if (this.stats.attempts > 0) {
-                    acc = ((this.stats.correct / this.stats.attempts) * 100).toFixed(1);
+                if (this.globalStats.attempts > 0) {
+                    acc = ((this.globalStats.correct / this.globalStats.attempts) * 100).toFixed(1);
                 }
                 document.getElementById('stat-accuracy').innerText = `${acc}%`;
             }
@@ -1547,24 +1571,46 @@
                 }
             }
             
-            gameOver() {
+            async gameOver() {
+                if (this.state === 'gameover') return;
                 this.state = 'gameover';
                 document.getElementById('sfx-over').play().catch(()=>{});
                 
-                // 최고 기록 갱신 (시간)
+                // 최고 기록 갱신 (시간, 콤보, 문제수)
+                let isNewRecord = false;
                 if (this.gameTime > this.maxTime) {
                     this.maxTime = this.gameTime;
                     localStorage.setItem('mathMaxTime', this.maxTime);
+                    isNewRecord = true;
+                }
+                if (this.stats.correct > this.bestProblems) {
+                    this.bestProblems = this.stats.correct;
+                    localStorage.setItem('mathBestProblems', this.bestProblems);
+                    isNewRecord = true;
+                }
+                if (this.stats.maxCombo > this.bestCombo) {
+                    this.bestCombo = this.stats.maxCombo;
+                    localStorage.setItem('mathBestCombo', this.bestCombo);
+                    isNewRecord = true;
                 }
 
-                // 랭킹 전송
-                sendRanking();
+                // 랭킹 전송 (대기)
+                try {
+                    await sendRanking();
+                } catch(e) {
+                    console.error("Ranking send failed", e);
+                }
                 
-                // 죽었으므로 저장된 이어하기 데이터 삭제
                 localStorage.removeItem('mathSaveData');
 
-                alert(`게임 오버!\n생존 시간: ${this.formatTime(this.gameTime)}`);
-                location.reload();
+                let msg = `게임 오버!\n생존 시간: ${this.formatTime(this.gameTime)}\n이번 판 해결: ${this.stats.correct}문제`;
+                if(isNewRecord) msg += `\n🎉 새로운 최고 기록 달성!`;
+                
+                // UI 렌더링 루프 등 확실히 종료 후 알림
+                setTimeout(() => {
+                    alert(msg);
+                    location.reload();
+                }, 100);
             }
 
             saveGame() {
@@ -1637,16 +1683,25 @@
                 return;
             }
 
+            // 이번 판 통계 갱신
             game.stats.attempts++;
+            
+            // 누적 통계 갱신
+            game.globalStats.attempts++;
+            localStorage.setItem('mathGlobalAttempts', game.globalStats.attempts);
 
             if (val === currentProblem.answer) {
                 showToast("정답! 업그레이드를 선택하세요.");
                 document.getElementById('sfx-level').play().catch(()=>{});
                 
-                // 통계 갱신
+                // 이번 판 통계 갱신
                 game.stats.correct++;
                 game.stats.combo++;
                 if(game.stats.combo > game.stats.maxCombo) game.stats.maxCombo = game.stats.combo;
+                
+                // 누적 통계 갱신
+                game.globalStats.correct++;
+                localStorage.setItem('mathGlobalCorrect', game.globalStats.correct);
                 
                 game.updateHUD();
                 
@@ -1680,8 +1735,15 @@
 
             } else {
                 showToast("오답입니다! 다시 풀어보세요.");
+                
+                // 이번 판 통계 갱신
                 game.stats.combo = 0; // 콤보 초기화
                 game.stats.wrong++;
+                
+                // 누적 통계 갱신
+                game.globalStats.wrong++;
+                localStorage.setItem('mathGlobalWrong', game.globalStats.wrong);
+
                 game.updateHUD();
                 
                 input.value = '';
@@ -1717,7 +1779,7 @@
                 game.updateHUD();
                 game.updateSkillDock();
                 document.getElementById('shop-gold').innerText = game.gold;
-                        } else {
+            } else {
                 alert("골드가 부족합니다.");
             }
         }
@@ -1761,7 +1823,7 @@
         font-family: sans-serif;
     ">
         the-hero-robot-invasion<br>
-        made by gametudyssam 0.011
+        made by gametudyssam 0.012
     </div>
 
 </body>
