@@ -948,12 +948,24 @@
 
             try {
                 console.log("🌐 GAS 서버에 HTTP 요청 시작");
-                console.log("🔗 요청 URL:", APPS_SCRIPT_URL);
-                console.log("📨 요청 메소드: POST");
-                console.log("📊 전송 데이터:", JSON.stringify(payload, null, 2));
 
-                // GAS는 POST를 기대하므로 POST 방식 사용
-                // CORS 문제를 해결하기 위해 keepalive와 함께 시도
+                // URL 파라미터로 데이터 전송 (no-cors 모드에서 더 안정적)
+                const params = new URLSearchParams();
+                params.append('action', 'save_ranking');
+                params.append('username', payload.username);
+                params.append('level', payload.level.toString());
+                params.append('problems', payload.problems.toString());
+                params.append('maxCombo', payload.maxCombo.toString());
+                params.append('survivalTime', payload.survivalTime.toString());
+                params.append('attempts', payload.attempts.toString());
+                params.append('sessionId', payload.sessionId);
+                params.append('signature', payload.signature);
+                params.append('timestamp', payload.timestamp);
+
+                const requestUrl = `${APPS_SCRIPT_URL}?${params.toString()}`;
+                console.log("🔗 요청 URL:", requestUrl);
+
+                // GET 방식으로 URL 파라미터 전송
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => {
                     console.log("⏰ 요청 타임아웃 설정됨 (10초)");
@@ -961,31 +973,16 @@
                 }, 10000);
 
                 console.log("📡 fetch 요청 시작...");
-                const response = await fetch(APPS_SCRIPT_URL, {
-                    method: "POST",
-                    mode: "cors",
+                const response = await fetch(requestUrl, {
+                    method: "GET",
+                    mode: "no-cors",  // GAS는 CORS를 지원하지 않으므로 no-cors 모드 사용
                     keepalive: true,  // 페이지 언로드 시에도 요청 완료
-                    redirect: "follow",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify(payload),
                     signal: controller.signal
                 });
 
                 clearTimeout(timeoutId);
-
-                if (response.ok) {
-                    console.log("✅ HTTP 요청 성공:", response.status);
-                    try {
-                        const result = await response.json();
-                        console.log("📥 서버 응답:", result);
-                    } catch (e) {
-                        console.log("📝 서버 응답 파싱 불가 (텍스트 응답일 수 있음)");
-                    }
-                } else {
-                    console.error("❌ HTTP 요청 실패:", response.status, response.statusText);
-                }
+                console.log("✅ HTTP 요청 완료 (no-cors 모드 - 응답 내용 확인 불가)");
+                console.log("📝 GAS 서버의 실제 응답은 Apps Script 실행 로그에서 확인해야 함");
 
             } catch(err) {
                 if (err.name === 'AbortError') {
@@ -2023,7 +2020,7 @@
         font-family: sans-serif;
     ">
         the-hero-robot-invasion<br>
-        made by gametudyssam 0.022
+        made by gametudyssam 0.023
     </div>
 
 </body>
