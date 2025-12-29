@@ -918,38 +918,49 @@
         }
 
         async function sendRanking() {
+            console.log("🔍 sendRanking 함수 호출됨");
+
             if (!currentUser) {
-                console.log("랭킹 전송 중단: 사용자 없음");
+                console.log("❌ 랭킹 전송 중단: 사용자 없음");
                 return;
             }
+            console.log("👤 사용자 확인:", currentUser);
+
             if (!RankingSecurity.canSendNow()) {
-                console.log("랭킹 전송 중단: 스팸 방지");
+                console.log("❌ 랭킹 전송 중단: 스팸 방지 (쿨다운 중)");
                 return; // 스팸 전송 완화
             }
+            console.log("✅ 스팸 방지 통과");
 
             const payload = RankingSecurity.buildPayload(game, currentUser);
-            console.log("🎯 랭킹 전송 시작 - 사용자:", currentUser);
-            console.log("📊 전송 데이터:", payload);
+            console.log("📦 랭킹 페이로드 생성:", payload);
 
             const verdict = RankingSecurity.isLikelyValid(payload);
             if (!verdict.ok) {
-                console.warn("❌ 랭킹 전송 차단:", verdict.reason, payload);
+                console.warn("❌ 랭킹 전송 차단 - 유효성 검증 실패:", verdict.reason, payload);
                 return;
             }
+            console.log("✅ 데이터 유효성 검증 통과");
 
             // 기존 Apps Script 호환을 위해 기존 필드 유지 + 추가 필드(서명/세션/버전) 포함
             console.log("랭킹 서버로 전송 시도:", APPS_SCRIPT_URL);
             console.log("📊 랭킹 데이터:", JSON.stringify(payload, null, 2));
 
             try {
-                console.log("🎯 GAS에 랭킹 데이터 저장 시도");
+                console.log("🌐 GAS 서버에 HTTP 요청 시작");
+                console.log("🔗 요청 URL:", APPS_SCRIPT_URL);
+                console.log("📨 요청 메소드: POST");
                 console.log("📊 전송 데이터:", JSON.stringify(payload, null, 2));
 
                 // GAS는 POST를 기대하므로 POST 방식 사용
                 // CORS 문제를 해결하기 위해 keepalive와 함께 시도
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 10000);
+                const timeoutId = setTimeout(() => {
+                    console.log("⏰ 요청 타임아웃 설정됨 (10초)");
+                    controller.abort();
+                }, 10000);
 
+                console.log("📡 fetch 요청 시작...");
                 const response = await fetch(APPS_SCRIPT_URL, {
                     method: "POST",
                     mode: "no-cors",  // CORS 제한을 우회
@@ -962,16 +973,18 @@
                 });
 
                 clearTimeout(timeoutId);
-                console.log("✅ 랭킹 데이터 GAS로 전송됨 (응답 확인 불가 - no-cors 모드)");
+                console.log("✅ HTTP 요청 완료 (no-cors 모드 - 응답 내용 확인 불가)");
+                console.log("📝 GAS 서버의 실제 응답은 Apps Script 실행 로그에서 확인해야 함");
 
                 // 실제 저장 성공 여부는 GAS 로그에서 확인해야 함
                 // 클라이언트에서는 no-cors 모드로 인해 응답을 확인할 수 없음
 
             } catch(err) {
                 if (err.name === 'AbortError') {
-                    console.error("❌ 랭킹 전송 타임아웃");
+                    console.error("❌ 요청 타임아웃 (10초 경과)");
                 } else {
-                    console.error("❌ 랭킹 전송 네트워크 오류:", err);
+                    console.error("❌ 네트워크 오류:", err.message);
+                    console.error("❌ 오류 상세:", err);
                 }
             }
         }
@@ -1659,33 +1672,42 @@
                 if (this.state === 'gameover') return;
                 this.state = 'gameover';
                 document.getElementById('sfx-over').play().catch(()=>{});
-                
+
+                console.log("🎮 게임 오버 - 기록 분석 시작");
+                console.log(`📊 게임 통계: 생존시간=${this.formatTime(this.gameTime)}, 정답=${this.stats.correct}, 콤보=${this.stats.maxCombo}, 시도=${this.stats.attempts}`);
+
                 // 최고 기록 갱신 (시간, 콤보, 문제수)
                 let isNewRecord = false;
                 if (this.gameTime > this.maxTime) {
                     this.maxTime = this.gameTime;
                     localStorage.setItem('mathMaxTime', this.maxTime);
                     isNewRecord = true;
+                    console.log("🏆 최고 생존시간 갱신:", this.formatTime(this.maxTime));
                 }
                 if (this.stats.correct > this.bestProblems) {
                     this.bestProblems = this.stats.correct;
                     localStorage.setItem('mathBestProblems', this.bestProblems);
                     isNewRecord = true;
+                    console.log("🏆 최고 정답수 갱신:", this.bestProblems);
                 }
                 if (this.stats.maxCombo > this.bestCombo) {
                     this.bestCombo = this.stats.maxCombo;
                     localStorage.setItem('mathBestCombo', this.bestCombo);
                     isNewRecord = true;
+                    console.log("🏆 최고 콤보 갱신:", this.bestCombo);
                 }
 
                 // 로컬 랭킹 저장 (오프라인 랭킹 시스템)
+                console.log("💾 로컬 랭킹 저장 시작");
                 this.saveLocalRanking();
+                console.log("✅ 로컬 랭킹 저장 완료");
 
                 // 랭킹 전송 (비동기로 처리 - 페이지 리로드와 무관하게)
+                console.log("📤 GAS 랭킹 전송 시작");
                 sendRanking().then(() => {
-                    console.log("랭킹 전송 성공");
+                    console.log("✅ GAS 랭킹 전송 성공");
                 }).catch(e => {
-                    console.error("랭킹 전송 실패:", e);
+                    console.error("❌ GAS 랭킹 전송 실패:", e);
                 });
 
                 localStorage.removeItem('mathSaveData');
@@ -1720,7 +1742,12 @@
             }
 
             saveLocalRanking() {
-                if (!currentUser) return;
+                console.log("💽 saveLocalRanking 함수 시작");
+
+                if (!currentUser) {
+                    console.log("❌ 사용자 정보 없음 - 로컬 랭킹 저장 취소");
+                    return;
+                }
 
                 const survivalTime = Math.floor(this.gameTime / 1000);
                 const accuracy = this.stats.attempts > 0 ? ((this.stats.correct / this.stats.attempts) * 100).toFixed(1) : 0;
@@ -1735,43 +1762,57 @@
                     timestamp: new Date().toISOString()
                 };
 
+                console.log("📝 생성된 랭킹 항목:", rankingEntry);
+
                 // 기존 로컬 랭킹 불러오기
                 let localRankings = [];
                 const saved = localStorage.getItem('localRankings');
+                console.log("📚 기존 로컬 랭킹 데이터:", saved ? "있음" : "없음");
+
                 if (saved) {
                     try {
                         localRankings = JSON.parse(saved);
+                        console.log("📖 로컬 랭킹 파싱 성공, 항목 수:", localRankings.length);
                     } catch (e) {
-                        console.error("Local rankings corrupted", e);
+                        console.error("❌ 로컬 랭킹 데이터 파싱 실패:", e);
                         localRankings = [];
                     }
                 }
 
                 // 동일 사용자의 기존 기록 찾기
                 const existingIndex = localRankings.findIndex(r => r.username === currentUser);
+                console.log("🔍 기존 사용자 기록 찾기:", existingIndex >= 0 ? `인덱스 ${existingIndex}에 있음` : "새로운 사용자");
 
                 if (existingIndex >= 0) {
                     // 기존 기록 업데이트 (더 좋은 기록으로)
                     const existing = localRankings[existingIndex];
-                    if (rankingEntry.level > existing.level ||
+                    const shouldUpdate = rankingEntry.level > existing.level ||
                         rankingEntry.problems > existing.problems ||
                         rankingEntry.maxCombo > existing.maxCombo ||
-                        rankingEntry.survivalTime > existing.survivalTime) {
+                        rankingEntry.survivalTime > existing.survivalTime;
+
+                    if (shouldUpdate) {
+                        console.log("🔄 기존 기록 업데이트");
                         localRankings[existingIndex] = rankingEntry;
+                    } else {
+                        console.log("⏭️ 기존 기록이 더 좋음 - 업데이트 생략");
                     }
                 } else {
                     // 새 기록 추가
+                    console.log("➕ 새 기록 추가");
                     localRankings.push(rankingEntry);
                 }
 
                 // 최대 100개 기록 유지
                 if (localRankings.length > 100) {
+                    console.log("🗂️ 기록 수 제한 적용 (100개 유지)");
                     localRankings = localRankings.slice(-100);
                 }
 
                 // 저장
                 localStorage.setItem('localRankings', JSON.stringify(localRankings));
-                console.log("로컬 랭킹 저장됨:", rankingEntry);
+                console.log("✅ 로컬 랭킹 저장 완료, 총 항목 수:", localRankings.length);
+                console.log("📋 최종 저장된 랭킹 데이터:", localRankings);
             }
 
             loadGame() {
@@ -1974,7 +2015,7 @@
         font-family: sans-serif;
     ">
         the-hero-robot-invasion<br>
-        made by gametudyssam 0.018
+        made by gametudyssam 0.02
     </div>
 
 </body>
