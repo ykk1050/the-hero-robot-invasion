@@ -642,7 +642,7 @@
             <div style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: center;">
                 <button onclick="switchRankingTab('level')" class="ranking-tab active" style="padding: 10px 20px; background: #e2e8f0; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; transition: all 0.2s;">최고 레벨</button>
                 <button onclick="switchRankingTab('problems')" class="ranking-tab" style="padding: 10px 20px; background: #e2e8f0; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; transition: all 0.2s;">최다 문제 해결</button>
-                <button onclick="switchRankingTab('damage')" class="ranking-tab" style="padding: 10px 20px; background: #e2e8f0; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; transition: all 0.2s;">최대 피해량</button>
+                <button onclick="switchRankingTab('survival')" class="ranking-tab" style="padding: 10px 20px; background: #e2e8f0; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; transition: all 0.2s;">최장 생존</button>
             </div>
 
             <!-- 내 순위 박스 -->
@@ -694,8 +694,15 @@
     <audio id="sfx-over" src="game-over-417465.mp3"></audio>
 
   <script>
-        // === 모바일 뷰포트 높이 보정 (주소창/툴바로 인한 100vh 잘림 방지) ===
-        (function setupAppHeight() {
+            function formatTime(ms) {
+                const totalSec = Math.floor(ms / 1000);
+                const m = Math.floor(totalSec / 60);
+                const s = totalSec % 60;
+                return `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+            }
+
+            // 모바일 뷰포트 높이 보정 (주소창/툴바로 인한 100vh 잘림 방지) ===
+            (function setupAppHeight() {
             const docEl = document.documentElement;
             const setHeight = () => {
                 const h = (window.visualViewport && window.visualViewport.height)
@@ -1089,31 +1096,45 @@
 
         // 랭킹에 내 기록 업로드 (RankingSecurity 모듈 사용)
         async function uploadToRanking() {
+            console.log("🚀 uploadToRanking 함수 시작");
+
             if (!currentUser || currentUser === '익명') {
-                console.log('익명 사용자는 랭킹에 업로드되지 않습니다.');
+                console.log('⚠️ 익명 사용자는 랭킹에 업로드되지 않습니다.');
                 return;
             }
 
             // 게임이 시작되지 않았거나 초기 상태일 경우 방어
-            if (!game) return;
-
-            // RankingSecurity 모듈을 사용하여 안전한 페이로드 생성
-            // (username, level, problems, maxCombo, survivalTime, attempts, sessionId 포함 및 서명 생성)
-            const payload = RankingSecurity.buildPayload(game, currentUser);
-
-            // 기록이 의미 있는지 확인 (레벨 1, 문제 0, 데미지 0 등 초기 상태면 업로드 안 함)
-            if (payload.level <= 1 && payload.problems === 0 && payload.survivalTime === 0) {
-                console.log('업로드할 기록이 충분하지 않습니다.');
+            if (!game) {
+                console.error("❌ game 객체가 존재하지 않습니다.");
                 return;
             }
 
-            console.log("📤 랭킹 업로드 시도:", payload);
+            console.log("📊 현재 게임 상태:", {
+                level: game.player.level,
+                correct: game.stats.correct,
+                time: game.gameTime
+            });
+
+            // RankingSecurity 모듈을 사용하여 안전한 페이로드 생성
+            let payload;
+            try {
+                payload = RankingSecurity.buildPayload(game, currentUser);
+                console.log("📦 생성된 페이로드:", payload);
+            } catch (err) {
+                console.error("❌ 페이로드 생성 중 오류:", err);
+                return;
+            }
+
+            // 기록이 의미 있는지 확인 (레벨 1, 문제 0, 생존시간 0 등 완전 초기 상태면 업로드 안 함)
+            // 수정: 생존 시간이 0보다 크면(즉, 게임을 조금이라도 했으면) 전송하도록 완화
+            if (payload.level <= 1 && payload.problems === 0 && payload.survivalTime <= 0) {
+                console.log('⚠️ 업로드할 기록이 충분하지 않습니다 (완전 초기 상태).');
+                return;
+            }
+
+            console.log("📤 랭킹 서버로 전송 시작...", APPS_SCRIPT_URL);
 
             try {
-                // SPREADSHEET_URL을 사용하되, action 파라미터 추가
-                // 참고: GAS 코드는 하나의 배포 URL을 사용하며, 파라미터로 동작을 구분하는 것이 일반적입니다.
-                // 여기서는 기존 코드의 SPREADSHEET_URL을 메인 엔드포인트로 가정합니다.
-                
                 const response = await fetch(APPS_SCRIPT_URL, {
                     method: 'POST',
                     mode: 'no-cors', // CORS 문제 회피 (응답 내용 확인 불가)
@@ -1123,13 +1144,14 @@
                     body: JSON.stringify(payload)
                 });
 
-                console.log('✅ 랭킹 업로드 요청 전송 완료 (no-cors 모드)');
+                console.log('✅ 랭킹 업로드 요청 전송 완료 (no-cors 모드 - 응답 확인 불가)');
                 
             } catch (error) {
-                console.error('❌ 랭킹 업로드 실패:', error);
+                console.error('❌ 랭킹 업로드 실패 (네트워크 오류 등):', error);
                 if (typeof showToast === 'function') {
                     showToast('랭킹 서버 연결 실패');
                 }
+                throw error; // 상위 호출자에게 에러 전파
             }
         }
 
@@ -1148,9 +1170,24 @@
                 console.log('🔍 요청 URL:', url);
 
                 const response = await fetch(url);
-                const data = await response.json(); // response.text() 후 parsing 하는 과정을 간소화
+                const rawData = await response.json();
+                console.log('📥 랭킹 데이터 수신:', rawData);
 
-                if (!Array.isArray(data) || data.length === 0) {
+                // 데이터 구조 확인 및 정규화
+                let data = [];
+                if (Array.isArray(rawData)) {
+                    data = rawData;
+                } else if (rawData && typeof rawData === 'object') {
+                    // 만약 { result: "success", data: [...] } 형태라면
+                    if (Array.isArray(rawData.data)) {
+                        data = rawData.data;
+                    } else {
+                        // 에러 메시지 등이 왔을 경우
+                        console.warn('⚠️ 랭킹 데이터가 배열이 아닙니다:', rawData);
+                    }
+                }
+
+                if (data.length === 0) {
                     tbody.innerHTML = '<tr><td colspan="3" class="no-data">아직 랭킹 데이터가 없습니다.</td></tr>';
                     return;
                 }
@@ -1159,7 +1196,7 @@
                 switch(currentRankingTab) {
                     case 'level': label = '레벨'; break;
                     case 'problems': label = '문제 수'; break;
-                    case 'damage': label = '피해량'; break;
+                    case 'survival': label = ''; break; // 생존 시간은 별도 포맷팅
                 }
 
                 // 👇 내 순위 찾기
@@ -1179,7 +1216,7 @@
                         switch(currentRankingTab) {
                             case 'level': myValue = record.level; break;
                             case 'problems': myValue = record.problems; break;
-                            case 'damage': myValue = record.damage; break;
+                            case 'survival': myValue = formatTime(record.survivalTime * 1000); break;
                         }
                     }
                 });
@@ -1211,13 +1248,13 @@
                     else if (rank === 2) medal = '🥈';
                     else if (rank === 3) medal = '🥉';
 
-                    const isMyRecord = record.username === gameState.username;
+                    const isMyRecord = record.username === currentUser;
 
                     let value;
                     switch(currentRankingTab) {
-                        case 'level': value = record.level; break;
-                        case 'problems': value = record.problems; break;
-                        case 'damage': value = record.damage; break;
+                        case 'level': value = `${record.level} 레벨`; break;
+                        case 'problems': value = `${record.problems} 문제`; break;
+                        case 'survival': value = formatTime(record.survivalTime * 1000); break;
                     }
 
                     const row = document.createElement('tr');
@@ -1227,7 +1264,7 @@
                     row.innerHTML = `
                         <td><span class="rank-medal">${medal}</span>${rank}위</td>
                         <td>${record.username}${isMyRecord ? ' (나)' : ''}</td>
-                        <td>${value} ${label}</td>
+                        <td>${value}</td>
                     `;
                     tbody.appendChild(row);
                 });
@@ -1979,13 +2016,18 @@
                 this.saveLocalRanking();
                 console.log("✅ 로컬 랭킹 저장 완료");
 
-                // 랭킹 전송 (비동기로 처리 - 페이지 리로드와 무관하게)
-                console.log("📤 GAS 랭킹 전송 시작");
-                uploadToRanking().then(() => {
-                    console.log("✅ GAS 랭킹 전송 성공");
-                }).catch(e => {
-                    console.error("❌ GAS 랭킹 전송 실패:", e);
-                });
+                // 랭킹 전송 (중요: 페이지가 리로드되기 전에 전송 완료를 기다려야 함)
+                console.log("📤 GAS 랭킹 전송 프로세스 시작");
+                try {
+                    // 전송이 너무 오래 걸리면(3초) 무시하고 진행 (게임이 멈춘 것처럼 보이지 않게)
+                    await Promise.race([
+                        uploadToRanking(),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 3000))
+                    ]);
+                    console.log("✅ GAS 랭킹 전송 프로세스 완료");
+                } catch (e) {
+                    console.error("❌ GAS 랭킹 전송 중 오류 또는 타임아웃:", e);
+                }
 
                 localStorage.removeItem('mathSaveData');
 
@@ -2322,7 +2364,7 @@
         font-family: sans-serif;
     ">
         the-hero-robot-invasion<br>
-        made by gametudyssam 0.026
+        made by gametudyssam 0.027
     </div>
 
 </body>
