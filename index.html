@@ -1895,7 +1895,7 @@
                     life:300, color:'red', size:3
                 });
                 this.enemies.splice(idx, 1);
-                this.gold += 10;
+                // this.gold += 10; // 몬스터 처치 보상 제거 (문제 풀이 보상으로 변경)
                 this.updateHUD();
             }
 
@@ -2206,7 +2206,8 @@
             localStorage.setItem('mathGlobalAttempts', game.globalStats.attempts);
 
             if (val === currentProblem.answer) {
-                showToast("정답! 업그레이드를 선택하세요.");
+                game.gold += 30; // 정답 보상 30G
+                showToast("정답! 30G 획득! 업그레이드를 선택하세요.");
                 document.getElementById('sfx-level').play().catch(()=>{});
                 
                 // 이번 판 통계 갱신
@@ -2368,7 +2369,7 @@
         font-family: sans-serif;
     ">
         the-hero-robot-invasion<br>
-        made by gametudyssam 0.028
+        made by gametudyssam 0.029
     </div>
 
 </body>
