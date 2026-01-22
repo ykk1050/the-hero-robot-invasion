@@ -731,14 +731,14 @@
             // 합리적 상한 (정상 고인물 플레이를 고려해 넉넉하게)
             const LIMITS = Object.freeze({
                 MAX_NAME_LEN: 8,
-                MAX_LEVEL: 100000,
-                MAX_ATTEMPTS: 500000,
-                MAX_CORRECT: 500000,
-                MAX_COMBO: 500000,
+                MAX_LEVEL: 5000,      // 10만 -> 5천 (현실적 상한)
+                MAX_ATTEMPTS: 10000,  // 50만 -> 1만
+                MAX_CORRECT: 10000,   // 50만 -> 1만
+                MAX_COMBO: 10000,     // 50만 -> 1만
                 MAX_SURVIVAL_SEC: 172800, // 48시간
                 // 속도 기반 제한 (물리적으로 불가능한 수준만 차단)
-                MAX_ATTEMPTS_PER_SEC: 8,  // 초당 8문제 시도(매우 넉넉)
-                MIN_MS_PER_ATTEMPT: 200   // 시도당 최소 0.2초(매우 넉넉)
+                MAX_ATTEMPTS_PER_SEC: 3,  // 초당 8문제 -> 3문제 (인간의 한계 고려)
+                MIN_MS_PER_ATTEMPT: 300   // 0.2초 -> 0.3초 (입력 반응 속도 고려)
             });
 
             // 간단 해시(서명) 생성: 서버와 동일 로직으로 맞추면 "서명 검증" 가능
@@ -1109,16 +1109,20 @@
                 return;
             }
 
-            console.log("📊 현재 게임 상태:", {
-                level: game.player.level,
-                correct: game.stats.correct,
-                time: game.gameTime
-            });
-
             // RankingSecurity 모듈을 사용하여 안전한 페이로드 생성
             let payload;
             try {
                 payload = RankingSecurity.buildPayload(game, currentUser);
+                
+                // [추가된 보안 검사] 비정상적인 플레이인지 확인
+                const securityCheck = RankingSecurity.isLikelyValid(payload);
+                if (!securityCheck.ok) {
+                    console.warn(`🚨 비정상 플레이 감지됨 (전송 차단): ${securityCheck.reason}`);
+                    // 조용히 리턴하거나, 경고 메시지를 띄울 수 있음
+                    showToast("비정상적인 기록이 감지되어 랭킹에 등록되지 않습니다.");
+                    return;
+                }
+
                 console.log("📦 생성된 페이로드:", payload);
             } catch (err) {
                 console.error("❌ 페이로드 생성 중 오류:", err);
@@ -2364,7 +2368,7 @@
         font-family: sans-serif;
     ">
         the-hero-robot-invasion<br>
-        made by gametudyssam 0.027
+        made by gametudyssam 0.028
     </div>
 
 </body>
