@@ -45,12 +45,12 @@
                 min-height: 0;
             }
             #game-area {
-                height: 60% !important;
+                height: 45% !important;
                 width: 100% !important;
                 min-height: 0;
             }
             #sidebar {
-                height: 40% !important;
+                height: 55% !important;
                 width: 100% !important;
                 min-width: 0 !important;
                 border-left: none !important;
@@ -61,12 +61,19 @@
                 min-height: 0;
             }
             /* 모바일에서 폰트 크기 조정 */
-            .problem-box { font-size: 1rem !important; padding: 10px !important; margin-bottom: 10px !important; flex-shrink: 1; overflow-y: auto; max-height: 100px; }
-            .answer-input { padding: 10px !important; font-size: 1.2rem !important; margin-bottom: 5px !important; }
+            .problem-box { font-size: 0.95rem !important; line-height: 1.45 !important; padding: 8px 10px !important; margin-bottom: 8px !important; flex-shrink: 0; }
+            /* 휴대폰에서는 문제·키패드가 한 화면에 보이도록 누적 통계와 안내 문구를 숨김 */
+            .sidebar-header, .math-stats, #sidebar hr, .keypad-tip { display: none !important; }
+            .virtual-keypad { gap: 6px !important; }
+            /* 위쪽 HUD: 타이머를 골드 아래로 옮기고, 닉네임은 왼쪽 상태 창에만 표시 */
+            .status-bar { width: 160px !important; }
+            .stats-panel { font-size: 0.75rem !important; padding: 6px !important; }
+
+            .answer-input { padding: 8px !important; font-size: 1.2rem !important; margin-bottom: 5px !important; }
             .submit-btn { display: none; } /* 모바일에서는 키패드 엔터 사용 */
             
             /* 모바일 키패드 최적화 */
-            .virtual-keypad button { padding: 12px !important; font-size: 1.2rem !important; }
+            .virtual-keypad button { padding: 8px !important; font-size: 1.2rem !important; line-height: 1.2 !important; }
             .input-group { margin-bottom: 5px !important; }
             
             /* 모바일에서 UI 위치 조정 */
@@ -81,6 +88,17 @@
             .skill-dock { bottom: calc(15px + env(safe-area-inset-bottom)) !important; gap: 10px !important; }
             .skill-slot { width: 50px !important; height: 50px !important; }
             .skill-slot span { font-size: 18px !important; }
+        }
+
+        /* 게임 화면이 좁을 때(태블릿 세로, 휴대폰) 스킬 칸을 왼쪽으로 옮겨 랭킹·상점 버튼과 겹치지 않게 함 */
+        @media (max-width: 1024px) {
+            .skill-dock { left: 15px !important; transform: none !important; gap: 10px !important; }
+            /* 타이머는 골드 아래로 옮기고, 닉네임은 왼쪽 상태 창에만 표시 (체력 막대와 겹치지 않게) */
+            #timer-display { left: auto !important; right: 15px !important; transform: none !important; top: 72px !important; font-size: 1.4rem !important; }
+            #nickname-display { display: none !important; }
+        }
+        @media (min-width: 769px) and (max-width: 1024px) {
+            .skill-slot { width: 60px !important; height: 60px !important; }
         }
 
         /* === 좌측 게임 영역 === */
@@ -479,7 +497,14 @@
             font-weight: bold;
         }
 
+        #start-screen .credit-line {
+            position: absolute; left: 0; right: 0; bottom: 12px;
+            text-align: center; font-family: sans-serif; font-size: 0.75rem;
+            color: rgba(255, 255, 255, 0.5); padding: 0 16px;
+        }
+        #start-screen .credit-line a { color: #4fd1c5; }
     </style>
+    <script src="version.js"></script>
 </head>
  <body>
 
@@ -574,13 +599,13 @@
                 <button onclick="inputKey(7)">7</button>
                 <button onclick="inputKey(8)">8</button>
                 <button onclick="inputKey(9)">9</button>
-                <button onclick="inputKey('clear')" class="key-func" style="font-size: 0.9rem; line-height: 1.2;">모두<br>지우기</button>
+                <button onclick="inputKey('clear')" class="key-func" style="font-size: 0.9rem; line-height: 1.2;">지우기</button>
                 <button onclick="inputKey(0)">0</button>
                 <button onclick="submitAnswer()" class="submit">제출</button>
             </div>
 
-            <p style="font-size: 0.9rem; color: #aaa; text-align: center;">
-                정답을 맞추면 캐릭터를 업그레이드 할 수 있습니다!
+            <p class="keypad-tip" style="font-size: 0.9rem; color: #aaa; text-align: center;">
+                정답을 맞히면 캐릭터를 업그레이드할 수 있습니다!
             </p>
    </div>
 
@@ -593,14 +618,18 @@
     
     <!-- 시작 화면 -->
     <div id="start-screen">
-        <h1 style="font-size: 3rem; color: #4fd1c5; text-shadow: 0 0 20px rgba(79,209,197,0.5); margin-bottom: 20px;">
+        <h1 style="font-size: clamp(2rem, 8vw, 3rem); text-align: center; padding: 0 16px; color: #4fd1c5; text-shadow: 0 0 20px rgba(79,209,197,0.5); margin-bottom: 20px;">
             우주의 수호자: Average-Hero
         </h1>
         <p style="color: #cbd5e0; font-size: 1.2rem; margin-bottom: 40px; text-align: center; line-height: 1.6;">
-            좌측에서는 전투가, 우측에서는 수학 문제가 진행됩니다.<br>
+            전투 화면에서는 용사가 싸우고, 문제 화면에서는 평균 문제를 풉니다.<br>
             문제를 풀어 캐릭터를 성장시키고 적을 막아내세요!
         </p>
         <button class="start-btn" onclick="checkNameAndStart()">작전 개시</button>
+        <div class="credit-line">
+            Created by gamtudyssam using AI · <span class="version-text"></span>
+            · <a href="credits.html" target="_blank" rel="noopener">출처와 라이선스</a>
+        </div>
     </div>
 
     <!-- 상점 모달 -->
@@ -1419,90 +1448,101 @@
         }
 
         // === 1. 수학 문제 생성기 ===
+        // 받침 유무로 조사 고르기 (예: josa('수현', '은', '는') → '수현은')
+        function hasBatchim(word) {
+            const ch = String(word).trim().slice(-1);
+            const code = ch.charCodeAt(0);
+            if (code >= 0xAC00 && code <= 0xD7A3) return (code - 0xAC00) % 28 !== 0;
+            return '013678'.includes(ch); // 숫자로 끝날 때 (일, 삼, 육, 칠, 팔, 영)
+        }
+        function josa(word, withBatchim, withoutBatchim) {
+            return word + (hasBatchim(word) ? withBatchim : withoutBatchim);
+        }
+
         class MathGen {
             constructor() {
                 this.names = ['철수', '영희', '민수', '지수', '현우', '민지', '수현', '호진'];
-                // 상황별 템플릿 정의
+                // 상황별 템플릿 정의 (range: 나올 수 있는 값의 범위, max: 넘으면 안 되는 값)
+                // of(누가): '누가 ~한 것' 꼴 / avgQ: 평균을 묻는 말
                 this.scenarios = [
-                    { item: '수학 시험 점수', unit: '점', action: '받았습니다', question: '평균 점수', range: [70, 95] },
-                    { item: '가지고 있는 사탕', unit: '개', action: '가지고 있습니다', question: '사탕의 평균 개수', range: [10, 40] },
-                    { item: '줄넘기 기록', unit: '회', action: '했습니다', question: '줄넘기 기록의 평균', range: [30, 80] },
-                    { item: '읽은 책', unit: '권', action: '읽었습니다', question: '읽은 책의 평균 권수', range: [5, 20] },
-                    { item: '모은 딱지', unit: '장', action: '모았습니다', question: '모은 딱지의 평균 개수', range: [15, 50] }
+                    { item: '수학 시험 점수', unit: '점', action: '받았습니다', avgQ: '평균 점수', range: [60, 95], max: 100, grow: 0,
+                      of: (who) => `${who}의 수학 시험 점수` },
+                    { item: '가지고 있는 사탕', unit: '개', action: '가지고 있습니다', avgQ: '사탕 수의 평균', range: [10, 40], grow: 2,
+                      of: (who) => `${josa(who, '이', '가')} 가지고 있는 사탕 수` },
+                    { item: '줄넘기 기록', unit: '회', action: '했습니다', avgQ: '줄넘기 기록의 평균', range: [30, 80], grow: 2,
+                      of: (who) => `${who}의 줄넘기 기록` },
+                    { item: '읽은 책', unit: '권', action: '읽었습니다', avgQ: '읽은 책 수의 평균', range: [5, 20], grow: 1,
+                      of: (who) => `${josa(who, '이', '가')} 읽은 책 수` },
+                    { item: '모은 딱지', unit: '장', action: '모았습니다', avgQ: '모은 딱지 수의 평균', range: [15, 50], grow: 2,
+                      of: (who) => `${josa(who, '이', '가')} 모은 딱지 수` }
                 ];
             }
 
             getRandomInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
 
+            // 모든 값이 [lo, hi] 안에 있고 합이 사람 수로 나누어떨어지는 자료 만들기
+            makeValues(count, lo, hi) {
+                for (let tries = 0; tries < 50; tries++) {
+                    const values = [];
+                    for (let i = 0; i < count; i++) values.push(this.getRandomInt(lo, hi));
+                    const sum = values.reduce((x, y) => x + y, 0);
+                    const r = sum % count;
+                    if (r === 0) return values;
+                    // 한 명의 값을 조금 바꿔 나누어떨어지게 맞춤 (범위를 넘지 않을 때만)
+                    const i = this.getRandomInt(0, count - 1);
+                    if (values[i] - r >= lo) { values[i] -= r; return values; }
+                    if (values[i] + (count - r) <= hi) { values[i] += count - r; return values; }
+                }
+                const v = this.getRandomInt(lo, hi);
+                return new Array(count).fill(v);
+            }
+
             generateProblem(level) {
                 const isReverse = Math.random() > 0.5; // 50% 확률로 역산 문제
                 const scenario = this.scenarios[Math.floor(Math.random() * this.scenarios.length)];
                 const count = this.getRandomInt(2, 3); // 2~3명 등장
-                
+
                 // 이름 랜덤 선택
-                let currentNames = [...this.names].sort(() => 0.5 - Math.random()).slice(0, count);
-                
-                // 난이도에 따른 값 범위 조정
-                let minVal = scenario.range[0] + (level * 2);
-                let maxVal = scenario.range[1] + (level * 2);
-                
-                // 평균값 먼저 결정 (정수 답을 위해)
-                let avg = this.getRandomInt(minVal, maxVal);
-                let total = avg * count;
-                
-                // 개별 값 생성 (평균 주변 값으로)
-                let values = [];
-                let currentSum = 0;
-                for(let i=0; i<count-1; i++) {
-                    let val = this.getRandomInt(avg - 10, avg + 10);
-                    if(val < 0) val = 0; // 음수 방지
-                    values.push(val);
-                    currentSum += val;
-                }
-                // 마지막 값은 합계를 맞추기 위해 계산
-                let lastVal = total - currentSum;
-                // 만약 마지막 값이 음수면 보정 (단순하게 모두 평균값으로 통일)
-                if (lastVal < 0) {
-                    values = new Array(count-1).fill(avg);
-                    lastVal = avg;
-                }
-                values.push(lastVal);
-                
-                // 값 섞기
-                values.sort(() => 0.5 - Math.random());
+                const currentNames = [...this.names].sort(() => 0.5 - Math.random()).slice(0, count);
+
+                // 난이도에 따라 값이 커짐 (단, 시험 점수처럼 최댓값이 있으면 넘지 않음)
+                const grow = Math.min(level, 50) * scenario.grow;
+                let lo = scenario.range[0] + grow;
+                let hi = scenario.range[1] + grow;
+                if (scenario.max) { hi = Math.min(hi, scenario.max); lo = Math.min(lo, hi - 10); }
+
+                const values = this.makeValues(count, lo, hi);
+                const avg = values.reduce((x, y) => x + y, 0) / count;
+
+                const u = scenario.unit;
+                const list = (n) => currentNames.slice(0, n)
+                    .map((name, i) => `${josa(name, '은', '는')} ${values[i]}${u}`).join(', ');
 
                 let question = '';
                 let answer = 0;
 
                 if (!isReverse) {
                     // === 정방향: 평균 구하기 ===
-                    // 예: 철수는 10개, 영희는 20개를 가지고 있습니다. 평균은?
-                    let sentence = "";
-                    for(let i=0; i<count; i++) {
-                        // 조사 처리 (간단히)
-                        let sub = i === count-1 ? "" : ", ";
-                        sentence += `${currentNames[i]}는 ${values[i]}${scenario.unit}${sub}`;
-                    }
-                    sentence += `을(를) ${scenario.action}.`;
-                    
-                    question = `${scenario.item}에 대한 조사 결과입니다.\n${sentence}\n\n이 친구들의 ${scenario.question}는 얼마입니까?`;
-                    answer = avg;
+                    question = `${scenario.item}에 대한 조사 결과입니다.
+`
+                        + `${list(count)}${hasBatchim(u) ? '을' : '를'} ${scenario.action}.
 
-            } else {
-                    // === 역방향: 값 구하기 ===
-                    // 예: 두 명의 평균은 15개입니다. 철수가 10개라면 영희는?
-                    let groupName = count === 2 ? `${currentNames[0]}와(과) ${currentNames[1]}` : `${count}명의 친구들`;
-                    
-                    question = `${groupName}의 ${scenario.item} 평균은 ${avg}${scenario.unit}입니다.\n`;
-                    
-                    let knownPart = "";
-                    for(let i=0; i<count-1; i++) {
-                        knownPart += `${currentNames[i]}는 ${values[i]}${scenario.unit}`;
-                        if(i < count-2) knownPart += ", ";
-                    }
-                    question += `${knownPart}일 때,\n\n나머지 ${currentNames[count-1]}의 값은 얼마입니까?`;
-                    
-                    answer = values[count-1];
+`
+                        + `이 친구들의 ${josa(scenario.avgQ, '은', '는')} 몇 ${u}입니까?`;
+                    answer = avg;
+                } else {
+                    // === 역방향: 모르는 값 구하기 ===
+                    const groupName = count === 2
+                        ? `${josa(currentNames[0], '과', '와')} ${currentNames[1]}`
+                        : `${currentNames.join(', ')} ${count}명`;
+                    const last = currentNames[count - 1];
+                    question = `${scenario.of(groupName)}의 평균은 ${avg}${u}입니다.
+`
+                        + `${list(count - 1)}일 때,
+
+`
+                        + `${josa(scenario.of(last), '은', '는')} 몇 ${u}입니까?`;
+                    answer = values[count - 1];
                 }
 
                 return { question, answer };
@@ -2351,26 +2391,8 @@
 
         
 
+        document.querySelectorAll('.version-text').forEach(el => el.textContent = window.VERSION);
     </script>
-
-
-
-
-    <!-- 버전 정보 워터마크 -->
-    <div style="
-        position: fixed;
-        bottom: 5px;
-        right: 10px;
-        font-size: 0.7rem;
-        color: rgba(255, 255, 255, 0.3);
-        pointer-events: none;
-        z-index: 9999;
-        text-align: right;
-        font-family: sans-serif;
-    ">
-        the-hero-robot-invasion<br>
-        made by gametudyssam 0.029
-    </div>
 
 </body>
 </html>
