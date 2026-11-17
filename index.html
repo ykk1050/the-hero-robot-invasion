@@ -445,21 +445,36 @@
             color: #ffd700;
         }
 
-        /* 닉네임 입력 모달 */
-        #name-modal {
-            z-index: 3500;
+        /* 조합형 닉네임 만들기 (랭킹 창) */
+        .my-nick-list { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 10px 0 6px; }
+        .my-nick-btn, .nick-word-btn, .nick-slot, .nick-spin-btn {
+            font-family: 'Jua', sans-serif; border: 2px solid #38b2ac; background: white; color: #234e52;
+            border-radius: 10px; padding: 6px 10px; cursor: pointer; font-size: 0.95rem;
         }
-        .name-input {
-            width: 80%;
-            padding: 10px;
-            font-size: 1.2rem;
-            border-radius: 5px;
-            border: 2px solid #4a5568;
-            background: #1a202c;
-            color: white;
-            margin: 20px 0;
-            text-align: center;
+        .my-nick-btn.current { background: #38b2ac; color: white; }
+        .nick-slots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; }
+        .nick-slot { display: flex; flex-direction: column; gap: 2px; min-height: 52px; justify-content: center; padding: 4px; word-break: keep-all; }
+        .nick-slot small { color: #718096; font-size: 0.75rem; }
+        .nick-slot.open { background: #e6fffa; box-shadow: 0 0 0 3px rgba(56, 178, 172, 0.35); }
+        .nick-words {
+            display: flex; flex-wrap: wrap; gap: 5px; justify-content: center;
+            max-height: 140px; overflow-y: auto; margin-top: 8px; padding: 6px;
+            background: rgba(255, 255, 255, 0.6); border-radius: 10px;
         }
+        .nick-word-btn { padding: 4px 9px; font-size: 0.9rem; }
+        .nick-word-btn.random { background: #fefcbf; border-color: #d69e2e; }
+        .nick-word-btn.chosen { background: #38b2ac; color: white; }
+        .nick-spin-btn { margin: 8px 0; background: #fefcbf; border-color: #d69e2e; }
+        .nick-spin-btn:disabled, .username-save-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+        .nick-preview { font-size: 1.15rem; color: #234e52; margin: 4px 0; word-break: keep-all; }
+        .nick-status { min-height: 1.4em; font-size: 0.9rem; margin-bottom: 6px; color: #4a5568; }
+        .nick-status.ok { color: #2f855a; }
+        .nick-status.bad { color: #c53030; }
+        .username-save-btn {
+            padding: 10px 25px; background: linear-gradient(135deg, #38b2ac, #319795); color: white; border: none;
+            border-radius: 10px; font-family: 'Jua', sans-serif; font-size: 1.1rem; cursor: pointer;
+        }
+        .nick-help { font-size: 0.8rem; color: #4a5568; margin: 8px 0 0; }
 
         /* 가상 키패드 스타일 */
         .virtual-keypad {
@@ -655,23 +670,28 @@
     <!-- 랭킹 모달 -->
     <div id="rank-modal" class="modal-overlay">
         <div class="modal-content" style="width: 600px; max-height: 80vh; overflow-y: auto;">
+            <button onclick="closeRankingModal()" aria-label="닫기" style="float: right; background: none; border: none; color: #e2e8f0; font-size: 1.8rem; line-height: 1; cursor: pointer; padding: 0 4px;">✕</button>
             <h2 style="color: #a18cd1; margin-top: 0;">🏆 글로벌 랭킹</h2>
-            <p style="color: #888; font-size: 0.9rem; margin-bottom: 15px; text-align: center;">다른 플레이어들과 경쟁하세요! 닉네임을 설정할때는 이름 등 개인정보를 넣지 마세요.</p>
+            <p style="color: #888; font-size: 0.9rem; margin-bottom: 15px; text-align: center;">다른 요원들과 기록을 겨뤄 보세요! 단어를 골라 나만의 닉네임을 만들어요.</p>
 
-            <!-- 사용자 이름 설정 -->
-            <div style="background: linear-gradient(145deg, #e6fffa, #b2f5ea); border: 2px solid #38b2ac; border-radius: 15px; padding: 20px; margin-bottom: 25px; text-align: center;">
-                <div>
-                    <input type="text" id="usernameInput" placeholder="닉네임을 입력하세요" maxlength="10" style="padding: 10px 20px; font-size: 1.1rem; border: 2px solid #38b2ac; border-radius: 10px; text-align: center; width: 200px; font-weight: bold; margin-right: 10px;">
-                    <button onclick="saveUsername()" style="padding: 10px 25px; background: linear-gradient(135deg, #38b2ac, #319795); color: white; border: none; border-radius: 10px; font-size: 1.1rem; font-weight: bold; cursor: pointer; transition: all 0.2s;">닉네임 저장</button>
-                </div>
-                <div id="currentUsername" style="margin-top: 10px; font-size: 0.9rem; color: #2c7a7b;">현재 닉네임: 익명</div>
+            <!-- 닉네임 만들기 (단어 4개 조합) -->
+            <div style="background: linear-gradient(145deg, #e6fffa, #b2f5ea); border: 2px solid #38b2ac; border-radius: 15px; padding: 15px; margin-bottom: 20px; text-align: center; color: #234e52;">
+                <div id="currentUsername" style="font-size: 1rem; color: #2c7a7b;">현재 닉네임: 없음</div>
+                <div class="my-nick-list" id="myNickList"></div>
+                <div class="nick-slots" id="nickSlots"></div>
+                <div class="nick-words" id="nickWords"></div>
+                <button class="nick-spin-btn" id="nickSpinBtn" onclick="spinAllNick()">🎰 모두 돌리기</button>
+                <div class="nick-preview" id="nickPreview">단어 네 개를 골라 닉네임을 만들어 보세요</div>
+                <div class="nick-status" id="nickStatus"></div>
+                <button class="username-save-btn" id="usernameSaveBtn" onclick="saveUsername()" disabled>이 닉네임으로 정하기</button>
+                <p class="nick-help">이름 대신 단어를 골라 만든 닉네임만 쓸 수 있어요. 내가 만든 닉네임은 이 기기에서 다시 고를 수 있어요.<br>닉네임을 정하면 이 기기의 최고 기록이 랭킹에 올라가요.</p>
             </div>
 
             <!-- 랭킹 탭 -->
             <div style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: center;">
-                <button onclick="switchRankingTab('level')" class="ranking-tab active" style="padding: 10px 20px; background: #e2e8f0; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; transition: all 0.2s;">최고 레벨</button>
-                <button onclick="switchRankingTab('problems')" class="ranking-tab" style="padding: 10px 20px; background: #e2e8f0; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; transition: all 0.2s;">최다 문제 해결</button>
-                <button onclick="switchRankingTab('survival')" class="ranking-tab" style="padding: 10px 20px; background: #e2e8f0; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; transition: all 0.2s;">최장 생존</button>
+                <button onclick="switchRankingTab('level', this)" class="ranking-tab active" style="padding: 10px 20px; background: #e2e8f0; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; transition: all 0.2s;">최고 레벨</button>
+                <button onclick="switchRankingTab('problems', this)" class="ranking-tab" style="padding: 10px 20px; background: #e2e8f0; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; transition: all 0.2s;">최다 문제 해결</button>
+                <button onclick="switchRankingTab('survival', this)" class="ranking-tab" style="padding: 10px 20px; background: #e2e8f0; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; transition: all 0.2s;">최장 생존</button>
             </div>
 
             <!-- 내 순위 박스 -->
@@ -699,17 +719,7 @@
                 </table>
             </div>
 
-            <button onclick="document.getElementById('rank-modal').style.display='none'" style="margin-top: 20px; padding: 10px 30px; background: #4a5568; border:none; color:white; border-radius: 5px; cursor:pointer;">닫기</button>
-        </div>
-    </div>
-
-    <!-- 닉네임 입력 모달 -->
-    <div id="name-modal" class="modal-overlay" style="display:none;">
-        <div class="modal-content" style="width: 400px;">
-            <h2 style="color: #4fd1c5; margin-top: 0;">요원 등록</h2>
-            <p>랭킹에 등록될 이름을 입력하세요.</p>
-            <input type="text" id="username-input" class="name-input" placeholder="닉네임 (최대 8글자)" maxlength="8">
-            <button onclick="submitName()" class="start-btn" style="font-size:1.2rem; padding:10px 30px;">확인</button>
+            <button onclick="closeRankingModal()" style="margin-top: 20px; padding: 10px 30px; background: #4a5568; border:none; color:white; border-radius: 5px; cursor:pointer;">닫기</button>
         </div>
     </div>
 
@@ -748,153 +758,6 @@
                 window.visualViewport.addEventListener('scroll', setHeight, { passive: true });
             }
         })();
-
-        // === 랭킹(비정상 플레이 방지) 유틸 ===
-        // 참고: multiplying-decimals-main/index.html의 "createSignature + LIMITS + validator" 스타일을 간소화하여 적용
-        const RankingSecurity = (() => {
-            // ⚠️ 웹 클라이언트 특성상 완전한 보안은 서버 검증이 필수입니다.
-            // 그래도 단순 값 조작/스크립트 키디 수준의 공격은 대부분 차단/억제할 수 있습니다.
-            const CLIENT_VERSION = "avg-hero-anti-cheat-1";
-            const SECRET_KEY = "avg_hero_ranking_prevention_key_2025"; // 서버에서도 동일 키로 검증하면 효과 극대화
-
-            // 합리적 상한 (정상 고인물 플레이를 고려해 넉넉하게)
-            const LIMITS = Object.freeze({
-                MAX_NAME_LEN: 8,
-                MAX_LEVEL: 5000,      // 10만 -> 5천 (현실적 상한)
-                MAX_ATTEMPTS: 10000,  // 50만 -> 1만
-                MAX_CORRECT: 10000,   // 50만 -> 1만
-                MAX_COMBO: 10000,     // 50만 -> 1만
-                MAX_SURVIVAL_SEC: 172800, // 48시간
-                // 속도 기반 제한 (물리적으로 불가능한 수준만 차단)
-                MAX_ATTEMPTS_PER_SEC: 3,  // 초당 8문제 -> 3문제 (인간의 한계 고려)
-                MIN_MS_PER_ATTEMPT: 300   // 0.2초 -> 0.3초 (입력 반응 속도 고려)
-            });
-
-            // 간단 해시(서명) 생성: 서버와 동일 로직으로 맞추면 "서명 검증" 가능
-            function createSignature(payload) {
-                const raw = [
-                    payload.username,
-                    payload.level,
-                    payload.problems,
-                    payload.maxCombo,
-                    payload.survivalTime,
-                    payload.attempts,
-                    payload.sessionId,
-                    SECRET_KEY
-                ].join("_");
-
-                let hash = 0;
-                for (let i = 0; i < raw.length; i++) {
-                    hash = ((hash << 5) - hash) + raw.charCodeAt(i);
-                    hash |= 0; // 32bit
-                }
-                return Math.abs(hash).toString(16);
-            }
-
-            function clampInt(n, min, max) {
-                if (!Number.isFinite(n)) return min;
-                n = Math.trunc(n);
-                if (n < min) return min;
-                if (n > max) return max;
-                return n;
-            }
-
-            function sanitizeUsername(name) {
-                const trimmed = String(name || "").trim();
-                if (!trimmed) return "";
-                // 공백/제어문자 제거 + 길이 제한
-                const cleaned = trimmed.replace(/[\u0000-\u001f\u007f\s]+/g, "").slice(0, LIMITS.MAX_NAME_LEN);
-                // 너무 위험한 문자는 제거(표시/로그 깨짐 방지)
-                return cleaned.replace(/[<>`"']/g, "");
-            }
-
-            function getOrCreateSessionId() {
-                const key = "mathHeroSessionId";
-                let existing = localStorage.getItem(key);
-                if (!existing || typeof existing !== "string" || existing.length < 8) {
-                    const bytes = new Uint8Array(16);
-                    (crypto?.getRandomValues ? crypto.getRandomValues(bytes) : bytes.fill(Math.floor(Math.random() * 256)));
-                    existing = Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
-                    localStorage.setItem(key, existing);
-                }
-                currentSessionId = existing; // 전역 변수에 저장
-                return existing;
-            }
-
-            function buildPayload(game, username) {
-                const sessionId = getOrCreateSessionId();
-
-                // 원본 스탯 스냅샷
-                const rawLevel = Number(game?.player?.level);
-                const rawCorrect = Number(game?.stats?.correct);
-                const rawMaxCombo = Number(game?.stats?.maxCombo);
-                const rawAttempts = Number(game?.stats?.attempts);
-                const rawSurvival = Number.isFinite(game?.gameTime) ? Math.floor(game.gameTime / 1000) : 0;
-
-                const payload = {
-                    username: sanitizeUsername(username),
-                    level: clampInt(rawLevel, 1, LIMITS.MAX_LEVEL),
-                    problems: clampInt(rawCorrect, 0, LIMITS.MAX_CORRECT),
-                    maxCombo: clampInt(rawMaxCombo, 0, LIMITS.MAX_COMBO),
-                    survivalTime: clampInt(rawSurvival, 0, LIMITS.MAX_SURVIVAL_SEC),
-                    attempts: clampInt(rawAttempts, 0, LIMITS.MAX_ATTEMPTS),
-                    sessionId,
-                    clientVersion: 1, // 직접 숫자 할당 (안전하게)
-                    timestamp: new Date().toISOString()
-                };
-
-                // 정합성 보정
-                if (payload.problems > payload.attempts) payload.problems = payload.attempts;
-                if (payload.maxCombo > payload.problems) payload.maxCombo = payload.problems;
-
-                payload.signature = createSignature(payload);
-                return payload;
-            }
-
-            function isLikelyValid(payload) {
-                if (!payload.username) return { ok: false, reason: "NO_NAME" };
-                if (payload.username.length > LIMITS.MAX_NAME_LEN) return { ok: false, reason: "NAME_TOO_LONG" };
-                if (payload.level < 1 || payload.level > LIMITS.MAX_LEVEL) return { ok: false, reason: "BAD_LEVEL" };
-                if (payload.survivalTime < 0 || payload.survivalTime > LIMITS.MAX_SURVIVAL_SEC) return { ok: false, reason: "BAD_TIME" };
-                if (payload.attempts < 0 || payload.attempts > LIMITS.MAX_ATTEMPTS) return { ok: false, reason: "BAD_ATTEMPTS" };
-                if (payload.problems < 0 || payload.problems > payload.attempts) return { ok: false, reason: "BAD_CORRECT" };
-                if (payload.maxCombo < 0 || payload.maxCombo > payload.problems) return { ok: false, reason: "BAD_COMBO" };
-
-                // 속도 기반 비정상 감지(매크로/순간치트)
-                const t = Math.max(1, payload.survivalTime);
-                const attemptsPerSec = payload.attempts / t;
-                if (attemptsPerSec > LIMITS.MAX_ATTEMPTS_PER_SEC) return { ok: false, reason: "TOO_FAST" };
-                if (payload.attempts > 0 && (payload.survivalTime * 1000) < (payload.attempts * LIMITS.MIN_MS_PER_ATTEMPT)) {
-                    return { ok: false, reason: "IMPOSSIBLE_SPEED" };
-                }
-
-                // 서명 일치 확인(클라 내부 위변조/실수 방지)
-                const expected = createSignature(payload);
-                if (payload.signature !== expected) return { ok: false, reason: "BAD_SIGNATURE" };
-                return { ok: true };
-            }
-
-            // 간단 전송 레이트 리밋(반복 전송 공격 완화)
-            let lastSentAt = 0;
-            function canSendNow() {
-                const now = Date.now();
-                if (now - lastSentAt < 1000) return false; // 테스트 위해 1초로 단축
-                lastSentAt = now;
-                return true;
-            }
-
-            return Object.freeze({
-                LIMITS,
-                sanitizeUsername,
-                buildPayload,
-                isLikelyValid,
-                canSendNow,
-                getOrCreateSessionId // 외부 공개 추가
-            });
-        })();
-
-        // 랭킹 시스템 상수 (시즌 시스템 제거)
-        let currentRankingTab = 'level'; // 현재 선택된 랭킹 탭
 
         // localStorage 헬퍼 함수
         const localStorageHelper = {
@@ -936,515 +799,449 @@
         };
 
         // === 랭킹 시스템 ===
-        const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxkuuUzYeio4SRtel4D6q9r0tzwMJ8lXba9aDz0qs49ESnTQ5gY1O53E7fxbvQYmAeb/exec";
-        let currentUser = "";
-        let currentSessionId = "";
+        // 닉네임은 단어 4개를 골라 만드는 조합형만 씀 (실명·욕설이 들어갈 수 없음).
+        // 서버(server/Code.gs)는 번호만 받아 글자를 직접 만들고, 기기 열쇠로 닉네임 주인을 확인함.
+        // RANK_URL을 비우면 랭킹 버튼을 눌러도 "준비 중"만 보임. 주소 뒤에 ?ranktest=1을 붙이면 서버 대신 이 기기에만 저장해 시험할 수 있음.
+        const RANK_URL = "https://script.google.com/macros/s/AKfycbxkuuUzYeio4SRtel4D6q9r0tzwMJ8lXba9aDz0qs49ESnTQ5gY1O53E7fxbvQYmAeb/exec";
+        const RANK_SEASON = 1;   // server/Code.gs의 SEASON과 같아야 함
+        const RANK_TEST = /[?&]ranktest=1/.test(location.search);
 
-        // 닉네임 중복 체크 함수
-        async function checkUsernameAvailability(username, sessionId) {
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 3000); // 3초 타임아웃
+        // 단어는 번호로 저장되므로 맨 뒤에 덧붙이기만 할 것 (순서 변경·삭제 금지, 서버 Code.gs와 같아야 함)
+        const NICK_WORDS = {"color": ["민트빛", "칠흑의", "황금빛", "파스텔", "형광색", "보랏빛", "투명한", "노을빛", "하늘빛", "은빛", "무지갯빛", "진홍빛", "연둣빛", "새하얀", "바닷빛", "별빛", "달빛", "햇살빛", "복숭앗빛", "레몬빛", "초록빛", "산호빛", "라벤더빛", "청록빛", "구릿빛", "샛노란", "오로라빛", "벚꽃빛", "단풍빛", "쪽빛", "주황빛", "우윳빛", "크림빛", "숲빛", "비취빛", "호박빛", "은하수빛", "진주빛", "새파란", "분홍빛", "초콜릿빛", "솜사탕빛", "봄빛", "눈빛", "푸른", "붉은", "하얀", "노란", "우주빛", "강철빛", "네온빛"], "like": ["보드게임 즐기는", "떡볶이 좋아하는", "노래 부르는", "수학을 사랑하는", "야식을 탐내는", "코딩하는", "젤리 좋아하는", "책 읽는", "그림 그리는", "축구하는", "피아노 치는", "줄넘기하는", "춤추는", "요리하는", "별을 보는", "공룡 박사인", "곤충을 관찰하는", "식물을 키우는", "블록 쌓는", "종이접기하는", "퍼즐 푸는", "역사를 탐험하는", "박물관 좋아하는", "유물을 찾는", "지도를 그리는", "여행을 꿈꾸는", "수영하는", "자전거 타는", "농구하는", "배드민턴 치는", "달리기하는", "태권도하는", "바둑 두는", "체스 두는", "만화 그리는", "동화를 쓰는", "시를 쓰는", "일기 쓰는", "사진 찍는", "우쿨렐레 치는", "리코더 부는", "드럼 치는", "콧노래 부르는", "과학 실험하는", "로봇 만드는", "발명하는", "우주를 꿈꾸는", "바다를 좋아하는", "산을 오르는", "캠핑 가는", "낚시하는", "김밥 싸는", "아이스크림 좋아하는", "붕어빵 좋아하는", "귤 좋아하는", "수박 좋아하는", "딸기 좋아하는", "호떡 좋아하는", "쿠키 굽는", "핫초코 마시는", "라면 끓이는", "볶음밥 만드는", "고구마 좋아하는", "감자 좋아하는", "옥수수 좋아하는", "팝콘 좋아하는", "강아지 좋아하는", "고양이 좋아하는", "꽃을 가꾸는", "구름을 세는", "낮잠 자는", "수수께끼 내는", "퀴즈 푸는", "탐정놀이 하는", "보물을 찾는", "마술하는", "노을을 보는", "비눗방울 부는", "연날리기 하는", "눈사람 만드는", "줄다리기 하는", "팽이 돌리는", "공기놀이 하는", "제기 차는", "윷놀이 하는", "딱지 치는", "실뜨기 하는", "썰매 타는", "스케이트 타는", "인라인 타는", "탁구 치는", "야구하는", "배구하는", "피구하는", "등산하는", "산책하는", "별자리 찾는", "돌멩이 모으는", "스티커 모으는", "우표 모으는", "조개 줍는", "나뭇잎 모으는", "화석을 찾는", "고분을 탐사하는", "탑을 그리는", "도자기 빚는", "한자 공부하는", "영어 공부하는", "받아쓰기 잘하는", "구구단 외우는", "과일 깎는", "샌드위치 만드는", "케이크 굽는", "주먹밥 만드는", "만두 빚는", "떡 좋아하는", "송편 빚는", "수제비 좋아하는", "팥빙수 좋아하는", "식혜 마시는", "기타 치는", "바이올린 켜는", "하모니카 부는", "노래 만드는", "동요 부르는", "랩 하는", "박수 치는", "휘파람 부는", "실로폰 치는", "장구 치는", "평균을 구하는", "로봇을 막아내는", "우주를 지키는", "작전을 세우는", "문제를 척척 푸는"], "mood": ["전설의", "엉뚱한", "느긋한", "위풍당당한", "수줍은", "재빠른", "천재적인", "씩씩한", "용감한", "다정한", "똑똑한", "명랑한", "신비로운", "차분한", "부지런한", "호기심 많은", "행복한", "꿈꾸는", "상냥한", "활발한", "든든한", "웃음 많은", "친절한", "슬기로운", "날쌘", "침착한", "유쾌한", "귀여운", "멋진", "늠름한", "끈기 있는", "성실한", "기운찬", "포근한", "당당한", "지혜로운", "상상력 넘치는", "꼼꼼한", "대담한", "졸린", "배고픈", "빛나는", "즐거운", "신나는", "조용한", "평화로운", "반가운", "사랑스러운", "듬직한", "재치 있는", "센스 있는", "깜찍한", "총명한", "부드러운", "튼튼한", "날렵한", "산뜻한", "말랑말랑한", "보송보송한", "반짝반짝한", "무적의", "불굴의", "정확한", "계산이 빠른"], "who": ["고양이", "드래곤", "펭귄", "마법사", "너구리", "해적", "탐정", "슬라임", "개발자", "강아지", "토끼", "다람쥐", "판다", "수달", "고래", "돌고래", "거북이", "부엉이", "독수리", "여우", "사슴", "기린", "코끼리", "사자", "호랑이", "곰", "햄스터", "알파카", "미어캣", "카멜레온", "공룡", "유니콘", "로봇", "우주인", "기사", "탐험가", "고고학자", "박물관장", "역사가", "화가", "요리사", "과학자", "발명가", "음악가", "작가", "시인", "선장", "비행사", "정원사", "등대지기", "우체부", "사서", "천문학자", "마술사", "요정", "도깨비", "해태", "봉황", "장수풍뎅이", "무당벌레", "나비", "반딧불이", "해파리", "문어", "상어", "앵무새", "참새", "까치", "두루미", "백조", "홍학", "코알라", "캥거루", "고슴도치", "두더지", "아기 양", "아기 염소", "망아지", "병아리", "오리", "청설모", "물개", "바다사자", "북극곰", "눈표범", "치타", "얼룩말", "하마", "낙타", "라마", "거북선 선장", "탐사대장", "해설사", "큐레이터", "복원 전문가", "지도 제작자", "파수꾼", "수호신", "용사", "모험가", "우주 요원", "수학자", "전략가", "평균 탐정", "방어 대장"]};
+        const NICK_STEPS = [
+            { key: 'color', label: '색' },
+            { key: 'like', label: '좋아하는 것' },
+            { key: 'mood', label: '모습' },
+            { key: 'who', label: '캐릭터' }
+        ];
 
-                const checkUrl = `${APPS_SCRIPT_URL}?action=check_username&username=${encodeURIComponent(username)}&sessionId=${encodeURIComponent(sessionId)}`;
-                console.log("Checking username availability:", checkUrl);
+        let currentUser = "";          // 닉네임 번호 ("2-0-3-1"), 없으면 ""
+        let currentRankingTab = 'level';
 
-                const response = await fetch(checkUrl, { signal: controller.signal });
-                clearTimeout(timeoutId);
-                console.log("Username check response:", response.status, response.type);
-
-                if (response.type === 'opaque') {
-                    // no-cors 모드에서는 응답을 읽을 수 없음 - 일단 허용
-                    console.log("Opaque response - allowing username");
-                    return true;
-                }
-
-                const result = await response.json();
-                console.log("Username check result:", result);
-                return result.available === true;
-            } catch (err) {
-                if (err.name === 'AbortError') {
-                    console.log("Username check timed out - allowing username");
-                } else {
-                    console.error("닉네임 중복 체크 실패:", err);
-                }
-                // 타임아웃 또는 네트워크 오류 시 일단 허용
-                return true;
-            }
+        function parseNickId(id) {
+            const ix = String(id || '').split('-').map(Number);
+            return ix.length === 4 && ix.every((n, k) => Number.isInteger(n) && n >= 0 && n < NICK_WORDS[NICK_STEPS[k].key].length) ? ix : null;
         }
 
-        function checkNameAndStart() {
-            // 사용자 이름 로드
-            loadUsername();
-
-            const storedName = localStorage.getItem('mathHeroName');
-            
-            // 세션 ID가 없으면 지금 생성 (중요!)
-            RankingSecurity.getOrCreateSessionId(); 
-
-            if (storedName) {
-                // 저장된 값도 정제(로컬스토리지 변조 대비)
-                currentUser = RankingSecurity.sanitizeUsername(storedName);
-                if (!currentUser) {
-                    localStorage.removeItem('mathHeroName');
-                    document.getElementById('start-screen').style.display = 'none';
-                    document.getElementById('name-modal').style.display = 'flex';
-                    document.getElementById('username-input').focus();
-                    return;
-                }
-
-                // 닉네임 즉시 업데이트
-                const nicknameEl = document.getElementById('user-nickname');
-                const nicknameDisplayEl = document.getElementById('nickname-display');
-
-                if (nicknameEl) {
-                    nicknameEl.innerText = currentUser;
-                }
-                if (nicknameDisplayEl) {
-                    nicknameDisplayEl.innerText = `닉네임: ${currentUser}`;
-                }
-                
-                // 이어하기 데이터 확인
-                if (localStorage.getItem('mathSaveData')) {
-                    if (confirm("저장된 게임이 있습니다. 이어하시겠습니까?")) {
-                        if (game.loadGame()) {
-                            document.getElementById('start-screen').style.display = 'none';
-                            // 오디오 준비
-                            const audioIds = ['bgm', 'sfx-shoot', 'sfx-hit', 'sfx-level', 'sfx-over'];
-                            audioIds.forEach(id => { const a=document.getElementById(id); if(a) a.load(); });
-                            
-                            game.state = 'playing';
-                            
-                            // 중요: 시간 관련 변수 재설정
-                            const now = performance.now();
-                            game.lastTime = now;
-                            game.player.lastFire = now; // 즉시 발사 가능하도록 설정
-                            game.lastSpawn = now;       // 스폰 타이머도 리셋
-
-                            game.loop(now);
-                            document.getElementById('bgm').play().catch(()=>{});
-                            return;
-                        }
-                    } else {
-                        // 이어하기 취소 시 데이터 삭제
-                        localStorage.removeItem('mathSaveData');
-                    }
-                }
-                startGame();
-            } else {
-                document.getElementById('start-screen').style.display = 'none';
-                document.getElementById('name-modal').style.display = 'flex';
-                document.getElementById('username-input').focus();
-            }
+        function nickText(id) {
+            const ix = parseNickId(id);
+            return ix ? ix.map((n, k) => NICK_WORDS[NICK_STEPS[k].key][n]).join(' ') : '';
         }
 
-        function submitName() {
-            const input = document.getElementById('username-input');
-            const name = input.value.trim();
-            if (!name) {
-                showToast("이름을 입력해주세요!");
-                return;
-            }
-            // 닉네임 정제(표시/서버 로그/단순 공격 방지)
-            const candidateName = RankingSecurity.sanitizeUsername(name);
-            if (!candidateName) {
-                showToast("사용할 수 없는 이름입니다. 다시 입력해주세요!");
-                return;
-            }
-
-            // 세션 ID 생성
-            const sessionId = RankingSecurity.getOrCreateSessionId();
-
-            // 닉네임 중복 체크 (서버에 등록된 이름인지 확인)
-            checkUsernameAvailability(candidateName, sessionId).then(isAvailable => {
-                if (!isAvailable) {
-                    showToast("이미 사용중인 이름입니다. 다른 이름을 선택해주세요!");
-                    return;
-                }
-
-                // 사용 가능한 이름이면 저장
-                currentUser = candidateName;
-                localStorage.setItem('mathHeroName', currentUser);
-                localStorage.setItem('mathHeroSessionId', sessionId); // 세션 ID도 저장
-                document.getElementById('name-modal').style.display = 'none';
-
-                // 닉네임 즉시 업데이트
-                const nicknameEl = document.getElementById('user-nickname');
-                const nicknameDisplayEl = document.getElementById('nickname-display');
-
-                if (nicknameEl) {
-                    nicknameEl.innerText = currentUser;
-                }
-                if (nicknameDisplayEl) {
-                    nicknameDisplayEl.innerText = `닉네임: ${currentUser}`;
-                }
-
-                startGame();
-            }).catch(err => {
-                console.error("닉네임 확인 실패:", err);
-                showToast("닉네임 확인에 실패했습니다. 다시 시도해주세요.");
-            });
+        function getMyNicks() {
+            const list = localStorageHelper.load('myNicks');
+            return Array.isArray(list) ? list.filter(id => parseNickId(id)) : [];
         }
 
-        // 사용자 이름 로드
+        function addMyNick(id) {
+            localStorageHelper.save('myNicks', [id, ...getMyNicks().filter(x => x !== id)].slice(0, 20));
+        }
+
+        // 저장된 닉네임 불러오기 (예전 직접 입력 닉네임은 쓰지 않음)
         function loadUsername() {
-            const savedUsername = localStorageHelper.load('username');
+            const saved = localStorageHelper.load('nickId');
+            currentUser = parseNickId(saved) ? saved : '';
+            ['mathHeroName', 'username', 'localRankings'].forEach(k => {
+                try { localStorage.removeItem(k); } catch (e) {}
+            });
+            updateNicknameLabels();
+        }
 
-            if (savedUsername) {
-                currentUser = savedUsername; // 기존 currentUser 변수 사용
-                document.getElementById('currentUsername').textContent = `현재 이름: ${savedUsername}`;
-                document.getElementById('usernameInput').value = savedUsername;
+        function updateNicknameLabels() {
+            const text = nickText(currentUser);
+            const el = document.getElementById('user-nickname');
+            if (el) el.textContent = text || '없음';
+            const center = document.getElementById('nickname-display');
+            if (center) center.textContent = text ? `닉네임: ${text}` : '';
+            const label = document.getElementById('currentUsername');
+            if (label) label.textContent = text ? `현재 닉네임: ${text}` : '현재 닉네임: 없음 (아래에서 만들어 주세요)';
+        }
+
+        // 기기 열쇠: 닉네임 주인 확인용 (기기마다 한 번 만들어 계속 씀, 개인정보 아님)
+        function getPlayerToken() {
+            let token = localStorageHelper.load('playerToken');
+            if (typeof token !== 'string' || !/^[A-Za-z0-9-]{16,64}$/.test(token)) {
+                const bytes = new Uint8Array(16);
+                crypto.getRandomValues(bytes);
+                token = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+                localStorageHelper.save('playerToken', token);
+            }
+            return token;
+        }
+
+        // 이 기기의 최고 기록 (닉네임을 정하기 전에 한 판도 랭킹에 들어감)
+        function getRankBest() {
+            const n = key => Math.max(0, parseInt(localStorage.getItem(key)) || 0);
+            return {
+                level: n('mathBestLevel'),
+                problems: n('mathBestProblems'),
+                survival: Math.floor(n('mathMaxTime') / 1000),
+                combo: n('mathBestCombo')
+            };
+        }
+
+        // ---- 서버 요청 (시험 모드면 이 기기에만 저장) ----
+        const testServer = {
+            rows() { return localStorageHelper.load('rankTestRows') || {}; },
+            save(rows) { localStorageHelper.save('rankTestRows', rows); },
+            check(id) { return { taken: !!this.rows()[id] }; },
+            post(p) {
+                const rows = this.rows();
+                const row = rows[p.username];
+                if (row && row.owner !== p.token) return { success: false, code: 'NAME_TAKEN', message: '이미 다른 기기에서 쓰고 있는 닉네임이에요.' };
+                const r = row || { level: 0, problems: 0, survival: 0, combo: 0, owner: p.token };
+                if (p.action !== 'claim') ['level', 'problems', 'survival', 'combo'].forEach(k => { r[k] = Math.max(r[k], p[k] || 0); });
+                rows[p.username] = r;
+                this.save(rows);
+                return { success: true, code: p.action === 'claim' ? 'CLAIMED' : 'SAVED' };
+            },
+            list(type) {
+                return Object.entries(this.rows())
+                    .map(([id, r]) => ({ id, username: nickText(id), ...r }))
+                    .filter(r => r[type] > (type === 'level' ? 1 : 0))
+                    .sort((a, b) => b[type] - a[type]);
+            }
+        };
+
+        function rankReady() { return RANK_TEST || !!RANK_URL; }
+
+        async function rankFetch(url, options, ms = 8000) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), ms);
+            try {
+                const response = await fetch(url, { ...options, signal: controller.signal });
+                return await response.json();
+            } finally {
+                clearTimeout(timer);
             }
         }
 
-        // 사용자 이름 저장 (수정)
+        async function rankCheck(id) {
+            if (RANK_TEST) return testServer.check(id);
+            return rankFetch(`${RANK_URL}?action=check&id=${encodeURIComponent(id)}`);
+        }
+
+        // 응답을 읽을 수 있도록 text/plain으로 보냄 (사전 요청 없이 Apps Script가 받음)
+        async function rankPost(payload) {
+            const body = { ...payload, token: getPlayerToken(), season: RANK_SEASON };
+            if (RANK_TEST) return testServer.post(body);
+            const result = await rankFetch(RANK_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(body)
+            });
+            return result || {};
+        }
+
+        async function rankList(type) {
+            if (RANK_TEST) return testServer.list(type);
+            return rankFetch(`${RANK_URL}?type=${type}&username=${encodeURIComponent(currentUser)}`);
+        }
+
+        // ---- 닉네임 만들기 (슬롯) ----
+        let nickPick = [null, null, null, null];
+        let nickOpenStep = 0;
+        let nickSpinning = false;
+        let nickCheckSeq = 0;
+        let nickAvailable = false;
+
+        function renderNickBuilder() {
+            updateNicknameLabels();
+
+            const myList = document.getElementById('myNickList');
+            myList.innerHTML = '';
+            getMyNicks().forEach(id => {
+                const btn = document.createElement('button');
+                btn.className = 'my-nick-btn' + (id === currentUser ? ' current' : '');
+                btn.textContent = (id === currentUser ? '✅ ' : '👤 ') + nickText(id);
+                btn.onclick = () => useMyNick(id);
+                myList.appendChild(btn);
+            });
+
+            const slots = document.getElementById('nickSlots');
+            slots.innerHTML = '';
+            NICK_STEPS.forEach((step, k) => {
+                const btn = document.createElement('button');
+                btn.className = 'nick-slot' + (k === nickOpenStep ? ' open' : '');
+                btn.innerHTML = `<small>${k + 1}. ${step.label}</small><span></span>`;
+                btn.querySelector('span').textContent = nickPick[k] === null ? '고르기' : NICK_WORDS[step.key][nickPick[k]];
+                btn.onclick = () => { if (!nickSpinning) { nickOpenStep = k; renderNickBuilder(); } };
+                slots.appendChild(btn);
+            });
+
+            const wordsBox = document.getElementById('nickWords');
+            wordsBox.innerHTML = '';
+            const step = NICK_STEPS[nickOpenStep];
+            const random = document.createElement('button');
+            random.className = 'nick-word-btn random';
+            random.textContent = '🎲 아무거나';
+            random.onclick = () => chooseNickWord(nickOpenStep, Math.floor(Math.random() * NICK_WORDS[step.key].length));
+            wordsBox.appendChild(random);
+            NICK_WORDS[step.key].forEach((word, i) => {
+                const btn = document.createElement('button');
+                btn.className = 'nick-word-btn' + (nickPick[nickOpenStep] === i ? ' chosen' : '');
+                btn.textContent = word;
+                btn.onclick = () => chooseNickWord(nickOpenStep, i);
+                wordsBox.appendChild(btn);
+            });
+
+            renderNickPreview();
+        }
+
+        function renderNickPreview() {
+            const done = nickPick.every(v => v !== null);
+            document.getElementById('nickPreview').textContent = done
+                ? nickText(nickPick.join('-'))
+                : nickPick.map((v, k) => v === null ? '○○' : NICK_WORDS[NICK_STEPS[k].key][v]).join(' ');
+            document.getElementById('usernameSaveBtn').disabled = !(done && nickAvailable && !nickSpinning && rankReady());
+            document.getElementById('nickSpinBtn').disabled = nickSpinning;
+        }
+
+        function chooseNickWord(step, index) {
+            if (nickSpinning) return;
+            nickPick[step] = index;
+            const nextEmpty = nickPick.findIndex(v => v === null);
+            if (nextEmpty >= 0) nickOpenStep = nextEmpty;
+            renderNickBuilder();
+            checkNickAvailability();
+        }
+
+        // 🎰 모두 돌리기: 네 칸이 차례로 멈춤 (태블릿에서 화면이 가려져도 멈추지 않게 setInterval 사용)
+        function spinAllNick() {
+            if (nickSpinning) return;
+            nickSpinning = true;
+            nickAvailable = false;
+            setNickStatus('', '');
+            const stops = [700, 1000, 1300, 1600];
+            const start = Date.now();
+            const timer = setInterval(() => {
+                const elapsed = Date.now() - start;
+                NICK_STEPS.forEach((step, k) => {
+                    if (elapsed < stops[k]) nickPick[k] = Math.floor(Math.random() * NICK_WORDS[step.key].length);
+                });
+                document.querySelectorAll('#nickSlots .nick-slot span').forEach((el, k) => {
+                    el.textContent = NICK_WORDS[NICK_STEPS[k].key][nickPick[k]];
+                });
+                renderNickPreview();
+                if (elapsed >= stops[3]) {
+                    clearInterval(timer);
+                    nickSpinning = false;
+                    nickOpenStep = 3;
+                    renderNickBuilder();
+                    checkNickAvailability();
+                }
+            }, 70);
+        }
+
+        function setNickStatus(text, type) {
+            const el = document.getElementById('nickStatus');
+            el.textContent = text;
+            el.className = 'nick-status ' + (type || '');
+        }
+
+        async function checkNickAvailability() {
+            nickAvailable = false;
+            renderNickPreview();
+            if (!nickPick.every(v => v !== null)) { setNickStatus('', ''); return; }
+            const id = nickPick.join('-');
+            if (getMyNicks().includes(id) || id === currentUser) {
+                nickAvailable = true;
+                setNickStatus('✔ 내가 만든 닉네임이에요', 'ok');
+                renderNickPreview();
+                return;
+            }
+            if (!rankReady()) { setNickStatus('랭킹 서버를 준비하고 있어요', ''); return; }
+            const seq = ++nickCheckSeq;
+            setNickStatus('확인하는 중...', '');
+            try {
+                const result = await rankCheck(id);
+                if (seq !== nickCheckSeq) return;
+                if (result && result.taken === true) {
+                    setNickStatus('✖ 이미 누가 쓰고 있어요. 다른 조합을 골라 주세요', 'bad');
+                } else {
+                    nickAvailable = true;
+                    setNickStatus('✔ 사용할 수 있는 닉네임이에요', 'ok');
+                }
+            } catch (error) {
+                if (seq !== nickCheckSeq) return;
+                nickAvailable = true;   // 확인을 못 해도 정할 때 서버가 다시 확인함
+                setNickStatus('확인하지 못했어요. 정하기를 누르면 다시 확인해요', '');
+            }
+            renderNickPreview();
+        }
+
+        async function useMyNick(id) {
+            nickPick = parseNickId(id);
+            nickOpenStep = 3;
+            await claimNick(id);
+        }
+
         async function saveUsername() {
-            const username = document.getElementById('usernameInput').value.trim();
+            if (!nickPick.every(v => v !== null)) return;
+            await claimNick(nickPick.join('-'));
+        }
 
-            if (!username) {
-                alert('이름을 입력해주세요!');
+        // 서버에 닉네임 등록 (다른 기기가 쓰는 닉네임이면 거부)
+        async function claimNick(id) {
+            if (!parseNickId(id) || !rankReady()) return;
+            let result;
+            try {
+                // 예전 방식 기기 표시(sessionId)를 보내면, 새 닉네임을 처음 만들 때 예전 기록을 옮겨 받음
+                const legacy = localStorage.getItem('mathHeroSessionId') || '';
+                result = await rankPost({ action: 'claim', username: id, legacy });
+            } catch (error) {
+                setNickStatus('랭킹 서버에 연결하지 못했어요. 잠시 후 다시 눌러 주세요', 'bad');
                 return;
             }
-
-            if (username.length > 10) {
-                alert('이름은 10자 이하로 입력해주세요!');
+            if (result.code === 'NAME_TAKEN') {
+                nickAvailable = false;
+                setNickStatus('✖ 이미 누가 쓰고 있어요. 다른 조합을 골라 주세요', 'bad');
+                renderNickPreview();
                 return;
             }
-
-            currentUser = username; // 기존 currentUser 변수 사용
-            localStorageHelper.save('username', username);
-            document.getElementById('currentUsername').textContent = `현재 이름: ${username}`;
-
-            // 랭킹 업데이트 (async)
+            if (!result.success) {
+                setNickStatus(result.message || '지금은 닉네임을 정할 수 없어요. 잠시 후 다시 해 주세요', 'bad');
+                return;
+            }
+            currentUser = id;
+            localStorageHelper.save('nickId', id);
+            addMyNick(id);
+            renderNickBuilder();
+            if (result.migrated) {
+                try { localStorage.removeItem('mathHeroSessionId'); } catch (e) {}
+            }
+            setNickStatus(result.migrated ? '✔ 닉네임이 정해졌어요! 예전 기록도 옮겨 왔어요' : '✔ 닉네임이 정해졌어요!', 'ok');
             await uploadToRanking();
-            alert('이름이 저장되었습니다!');
-
-            // 랭킹 다시 렌더링
             await renderRanking();
         }
 
-        // 랭킹에 내 기록 업로드 (RankingSecurity 모듈 사용)
+        // 이 기기의 최고 기록을 랭킹에 올림 (서버는 더 높은 값만 남김)
         async function uploadToRanking() {
-            console.log("🚀 uploadToRanking 함수 시작");
-
-            if (!currentUser || currentUser === '익명') {
-                console.log('⚠️ 익명 사용자는 랭킹에 업로드되지 않습니다.');
-                return;
-            }
-
-            // 게임이 시작되지 않았거나 초기 상태일 경우 방어
-            if (!game) {
-                console.error("❌ game 객체가 존재하지 않습니다.");
-                return;
-            }
-
-            // RankingSecurity 모듈을 사용하여 안전한 페이로드 생성
-            let payload;
+            if (!currentUser || !rankReady()) return;
+            const best = getRankBest();
+            if (best.level <= 1 && best.problems === 0 && best.survival === 0) return;
             try {
-                payload = RankingSecurity.buildPayload(game, currentUser);
-                
-                // [추가된 보안 검사] 비정상적인 플레이인지 확인
-                const securityCheck = RankingSecurity.isLikelyValid(payload);
-                if (!securityCheck.ok) {
-                    console.warn(`🚨 비정상 플레이 감지됨 (전송 차단): ${securityCheck.reason}`);
-                    // 조용히 리턴하거나, 경고 메시지를 띄울 수 있음
-                    showToast("비정상적인 기록이 감지되어 랭킹에 등록되지 않습니다.");
-                    return;
+                const result = await rankPost({ action: 'save', username: currentUser, ...best });
+                if (result.code === 'NAME_TAKEN') {
+                    showToast('이 닉네임은 다른 기기에서 쓰고 있어요. 랭킹에서 닉네임을 바꿔 주세요.');
+                } else if (['BAD_NAME', 'BAD_DATA', 'OLD_VERSION', 'TOO_MANY'].includes(result.code)) {
+                    showToast(result.message);
                 }
-
-                console.log("📦 생성된 페이로드:", payload);
-            } catch (err) {
-                console.error("❌ 페이로드 생성 중 오류:", err);
-                return;
-            }
-
-            // 기록이 의미 있는지 확인 (레벨 1, 문제 0, 생존시간 0 등 완전 초기 상태면 업로드 안 함)
-            // 수정: 생존 시간이 0보다 크면(즉, 게임을 조금이라도 했으면) 전송하도록 완화
-            if (payload.level <= 1 && payload.problems === 0 && payload.survivalTime <= 0) {
-                console.log('⚠️ 업로드할 기록이 충분하지 않습니다 (완전 초기 상태).');
-                return;
-            }
-
-            console.log("📤 랭킹 서버로 전송 시작...", APPS_SCRIPT_URL);
-
-            try {
-                const response = await fetch(APPS_SCRIPT_URL, {
-                    method: 'POST',
-                    mode: 'no-cors', // CORS 문제 회피 (응답 내용 확인 불가)
-                    headers: {
-                        'Content-Type': 'text/plain', // no-cors에서는 application/json 사용 불가
-                    },
-                    body: JSON.stringify(payload)
-                });
-
-                console.log('✅ 랭킹 업로드 요청 전송 완료 (no-cors 모드 - 응답 확인 불가)');
-                
             } catch (error) {
-                console.error('❌ 랭킹 업로드 실패 (네트워크 오류 등):', error);
-                if (typeof showToast === 'function') {
-                    showToast('랭킹 서버 연결 실패');
-                }
-                throw error; // 상위 호출자에게 에러 전파
+                // 연결이 안 되면 다음에 랭킹을 열거나 게임이 끝날 때 다시 올림
             }
         }
 
-        // 랭킹 렌더링 (스프레드시트 버전)
-        async function renderRanking() {
-            const tbody = document.getElementById('rankingTableBody');
-            tbody.innerHTML = '<tr><td colspan="3" class="no-data">랭킹 데이터를 불러오는 중...</td></tr>';
+        const RANK_LABEL = { level: '레벨', problems: '문제', survival: '' };
+        function rankValue(record) {
+            if (currentRankingTab === 'survival') return formatTime((record.survival || 0) * 1000);
+            return `${record[currentRankingTab] || 0} ${RANK_LABEL[currentRankingTab]}`;
+        }
 
-            // 내 순위 박스 일단 숨기기
+        function rankMessageRow(text) {
+            const tbody = document.getElementById('rankingTableBody');
+            tbody.innerHTML = '<tr><td colspan="3" class="no-data"></td></tr>';
+            tbody.querySelector('td').textContent = text;
+        }
+
+        async function renderRanking() {
             const myRankBox = document.getElementById('myRankBox');
             myRankBox.style.display = 'none';
-
+            if (!rankReady()) { rankMessageRow('랭킹 서버를 준비하고 있어요. 조금만 기다려 주세요!'); return; }
+            rankMessageRow('랭킹을 불러오는 중...');
+            const tab = currentRankingTab;
+            let data;
             try {
-                // [수정 1] URL에 username 파라미터 추가!
-                const url = `${APPS_SCRIPT_URL}?type=${currentRankingTab}&username=${encodeURIComponent(currentUser)}`;
-                console.log('🔍 요청 URL:', url);
-
-                const response = await fetch(url);
-                const rawData = await response.json();
-                console.log('📥 랭킹 데이터 수신:', rawData);
-
-                // 데이터 구조 확인 및 정규화
-                let data = [];
-                if (Array.isArray(rawData)) {
-                    data = rawData;
-                } else if (rawData && typeof rawData === 'object') {
-                    // 만약 { result: "success", data: [...] } 형태라면
-                    if (Array.isArray(rawData.data)) {
-                        data = rawData.data;
-                    } else {
-                        // 에러 메시지 등이 왔을 경우
-                        console.warn('⚠️ 랭킹 데이터가 배열이 아닙니다:', rawData);
-                    }
-                }
-
-                if (data.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="3" class="no-data">아직 랭킹 데이터가 없습니다.</td></tr>';
-                    return;
-                }
-
-                let label = '';
-                switch(currentRankingTab) {
-                    case 'level': label = '레벨'; break;
-                    case 'problems': label = '문제 수'; break;
-                    case 'survival': label = ''; break; // 생존 시간은 별도 포맷팅
-                }
-
-                // 👇 내 순위 찾기
-                let myRank = -1;
-                let myValue = 0;
-
-                // 데이터 전체를 순회하며 나를 찾음
-                data.forEach((record, index) => {
-                    if (record.username === currentUser) {
-                        // [수정 2] 백엔드에서 rank를 줬으면(100위 밖) 그거 쓰고, 아니면 index + 1
-                        if (record.rank) {
-                            myRank = record.rank;
-                        } else {
-                            myRank = index + 1;
-                        }
-
-                        switch(currentRankingTab) {
-                            case 'level': myValue = record.level; break;
-                            case 'problems': myValue = record.problems; break;
-                            case 'survival': myValue = formatTime(record.survivalTime * 1000); break;
-                        }
-                    }
-                });
-
-                // 👇 내 순위가 100위 밖이면 상단 박스에 표시 (순위가 확인되었을 때만)
-                if (myRank > 100) {
-                    myRankBox.style.display = 'block';
-                    document.getElementById('myRankNumber').textContent = `${myRank}위`;
-                    document.getElementById('myRankValue').textContent = `${myValue} ${label}`;
-                } else if (myRank !== -1) {
-                    // 100위 안이라면 상단 박스는 숨기고 테이블에서 강조됨
-                    myRankBox.style.display = 'none';
-                } else {
-                    // 랭킹에 없는 경우 (새로 시작한 경우 등)
-                    myRankBox.style.display = 'none';
-                }
-
-
-                tbody.innerHTML = '';
-
-                // 테이블에는 무조건 상위 100명만 표시
-                const displayData = data.slice(0, 100);
-
-                displayData.forEach((record, index) => {
-                    const rank = index + 1;
-                    let medal = '';
-
-                    if (rank === 1) medal = '🥇';
-                    else if (rank === 2) medal = '🥈';
-                    else if (rank === 3) medal = '🥉';
-
-                    const isMyRecord = record.username === currentUser;
-
-                    let value;
-                    switch(currentRankingTab) {
-                        case 'level': value = `${record.level} 레벨`; break;
-                        case 'problems': value = `${record.problems} 문제`; break;
-                        case 'survival': value = formatTime(record.survivalTime * 1000); break;
-                    }
-
-                    const row = document.createElement('tr');
-                    // 100위 안일 경우 내 줄 강조
-                    if (isMyRecord) row.classList.add('my-rank');
-
-                    row.innerHTML = `
-                        <td><span class="rank-medal">${medal}</span>${rank}위</td>
-                        <td>${record.username}${isMyRecord ? ' (나)' : ''}</td>
-                        <td>${value}</td>
-                    `;
-                    tbody.appendChild(row);
-                });
-
-                // [선택 사항] 100위 밖일 때 테이블 맨 아래에도 점선과 함께 표시하고 싶다면 아래 코드 유지
-                // 상단 박스(myRankBox)만 쓸 거면 이 부분은 지워도 됩니다.
-                if (myRank > 100) {
-                    const separatorRow = document.createElement('tr');
-                    separatorRow.innerHTML = '<td colspan="3" style="text-align: center; padding: 10px; background: #e2e8f0; font-weight: bold;">⋯</td>';
-                    tbody.appendChild(separatorRow);
-
-                    const myRow = document.createElement('tr');
-                    myRow.classList.add('my-rank');
-                    myRow.innerHTML = `
-                        <td><span class="rank-medal"></span>${myRank}위</td>
-                        <td>${currentUser} (나)</td>
-                        <td>${myValue} ${label}</td>
-                    `;
-                    tbody.appendChild(myRow);
-                }
-
-                console.log('✨ 렌더링 완료!');
+                data = await rankList(tab);
             } catch (error) {
-                console.error('💥 랭킹 로드 실패:', error);
-                tbody.innerHTML = '<tr><td colspan="3" class="no-data">랭킹 데이터를 불러오는데 실패했습니다.</td></tr>';
+                rankMessageRow('랭킹을 불러오지 못했어요. 인터넷 연결을 확인해 주세요.');
+                return;
+            }
+            if (tab !== currentRankingTab) return;   // 그 사이 다른 탭을 누름
+            if (!Array.isArray(data) || data.length === 0) { rankMessageRow('아직 랭킹 기록이 없어요.'); return; }
+
+            const tbody = document.getElementById('rankingTableBody');
+            tbody.innerHTML = '';
+            const addRow = (rank, record, mine) => {
+                const row = document.createElement('tr');
+                if (mine) row.classList.add('my-rank');
+                row.innerHTML = '<td></td><td></td><td></td>';
+                const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '';
+                row.children[0].textContent = `${medal}${rank}위`;
+                row.children[1].textContent = `${record.username}${mine ? ' (나)' : ''}`;   // 글자로만 표시
+                row.children[2].textContent = rankValue(record);
+                tbody.appendChild(row);
+            };
+            data.slice(0, 100).forEach((record, i) => addRow(i + 1, record, record.id === currentUser));
+
+            const me = data.find((r, i) => r.id === currentUser && (r.rank || i + 1) > 100);
+            if (me) {
+                const sep = document.createElement('tr');
+                sep.innerHTML = '<td colspan="3" style="text-align:center; font-weight:bold;">⋯</td>';
+                tbody.appendChild(sep);
+                addRow(me.rank || data.indexOf(me) + 1, me, true);
+                myRankBox.style.display = 'block';
+                document.getElementById('myRankNumber').textContent = `${me.rank || data.indexOf(me) + 1}위`;
+                document.getElementById('myRankValue').textContent = rankValue(me);
             }
         }
 
-        // 랭킹 모달 열기 (수정)
+        // 랭킹 창을 여는 동안 전투를 멈춤 (닉네임을 고르다 지지 않게)
+        let pausedByRanking = false;
+
         async function openRankingModal() {
+            if (typeof game !== 'undefined' && game.state === 'playing') {
+                game.state = 'paused';
+                pausedByRanking = true;
+            }
             loadUsername();
-            await uploadToRanking(); // await 추가
+            if (currentUser) nickPick = parseNickId(currentUser);
+            renderNickBuilder();
+            if (nickPick.every(v => v !== null)) checkNickAvailability();
             document.getElementById('rank-modal').style.display = 'flex';
-            await renderRanking(); // await 추가
+            await uploadToRanking();
+            await renderRanking();
         }
 
-        // 랭킹 모달 닫기
         function closeRankingModal() {
             document.getElementById('rank-modal').style.display = 'none';
+            if (pausedByRanking && game.state === 'paused') {
+                pausedByRanking = false;
+                game.state = 'playing';
+                game.lastTime = performance.now();
+                game.loop(game.lastTime);
+            }
+            pausedByRanking = false;
         }
 
-        // 랭킹 탭 전환 (수정)
-        async function switchRankingTab(tab) {
+        async function switchRankingTab(tab, btn) {
             currentRankingTab = tab;
-
-            // 탭 활성화 상태 변경
-            document.querySelectorAll('.ranking-tab').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            event.target.classList.add('active');
-
-            await renderRanking(); // await 추가
+            document.querySelectorAll('.ranking-tab').forEach(b => b.classList.remove('active'));
+            if (btn) btn.classList.add('active');
+            await renderRanking();
         }
 
-        function loadRanking(type) {
-            // 이 함수는 더 이상 사용되지 않음 - renderRanking 함수로 교체됨
-            return;
-
-            // 각 랭킹 타입별 강조할 컬럼 인덱스 (LV 열 제거로 인덱스 조정)
-            const highlightColumns = {
-                'problems': 2,   // 정답 문제 개수 컬럼
-                'combo': 3,      // 최대콤보 컬럼
-                'survival': 4,   // 생존 컬럼
-                'accuracy': 5    // 정답률 컬럼
-            };
-
-            // 로컬 랭킹 데이터 불러오기
-            let localRankings = [];
-            const saved = localStorage.getItem('localRankings');
-            if (saved) {
-                try {
-                    localRankings = JSON.parse(saved);
-                } catch (e) {
-                    console.error("Local rankings corrupted", e);
-                    localRankings = [];
+        // 작전 개시: 닉네임이 없어도 바로 시작 (닉네임은 랭킹 창에서 만듦)
+        function checkNameAndStart() {
+            loadUsername();
+            if (localStorage.getItem('mathSaveData')) {
+                if (confirm("저장된 게임이 있습니다. 이어하시겠습니까?")) {
+                    if (game.loadGame()) {
+                        document.getElementById('start-screen').style.display = 'none';
+                        game.state = 'playing';
+                        const now = performance.now();
+                        game.lastTime = now;
+                        game.player.lastFire = now; // 즉시 발사 가능하도록 설정
+                        game.lastSpawn = now;       // 스폰 타이머도 리셋
+                        game.loop(now);
+                        document.getElementById('bgm').play().catch(()=>{});
+                        return;
+                    }
+                } else {
+                    localStorage.removeItem('mathSaveData');
                 }
             }
-
-            // 랭킹 정렬
-            let sortedData = [];
-            if (type === 'problems') {
-                sortedData = localRankings.sort((a, b) => b.problems - a.problems);
-            } else if (type === 'combo') {
-                sortedData = localRankings.sort((a, b) => b.maxCombo - a.maxCombo);
-            } else if (type === 'survival') {
-                sortedData = localRankings.sort((a, b) => b.survivalTime - a.survivalTime);
-            } else if (type === 'accuracy') {
-                sortedData = localRankings
-                    .filter(r => r.attempts >= 100) // 100문제 이상만
-                    .sort((a, b) => {
-                        const accA = a.attempts > 0 ? (a.problems / a.attempts) : 0;
-                        const accB = b.attempts > 0 ? (b.problems / b.attempts) : 0;
-                        return accB - accA;
-                    });
-            }
-
-            let html = `
-                <table class="rank-table">
-                    <thead>
-                        <tr>
-                            <th>순위</th>
-                            <th>이름</th>
-                            <th>정답 문제 개수</th>
-                            <th>연속정답수</th>
-                            <th>생존시간</th>
-                            <th>정답률(100문제 이상)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-            `;
-
-            if (sortedData.length === 0) {
-                html += `<tr><td colspan="7">등록된 랭킹이 없습니다.</td></tr>`;
-            } else {
-                sortedData.forEach((row, index) => {
-                    const isMe = row.username === currentUser;
-                    const rank = index + 1;
-
-                    // 시간 포맷팅 (초 -> 분:초)
-                    const sec = row.survivalTime || 0;
-                    const min = Math.floor(sec / 60);
-                    const s = sec % 60;
-                    const timeStr = `${min}:${s.toString().padStart(2,'0')}`;
-
-                    // 정답률 계산
-                    let acc = 0;
-                    const attempts = row.attempts || 0;
-                    const correct = row.problems || 0;
-                    if (attempts > 0) acc = ((correct / attempts) * 100).toFixed(1);
-
-                    // 강조할 컬럼 결정
-                    const highlightCol = highlightColumns[type] || -1;
-
-                    html += `
-                        <tr class="${isMe ? 'my-rank' : ''}">
-                            <td>${rank}</td>
-                            <td>${row.username}</td>
-                            <td class="${highlightCol === 2 ? 'highlight-col' : ''}">${correct}</td>
-                            <td class="${highlightCol === 3 ? 'highlight-col' : ''}">${row.maxCombo || 0}</td>
-                            <td class="${highlightCol === 4 ? 'highlight-col' : ''}">${timeStr}</td>
-                            <td class="${highlightCol === 5 ? 'highlight-col' : ''}">${attempts >= 100 ? acc + '%' : '-'}</td>
-                        </tr>
-                    `;
-                });
-            }
-            html += `</tbody></table>`;
-            container.innerHTML = html;
+            startGame();
         }
 
         // === 1. 수학 문제 생성기 ===
@@ -1683,7 +1480,7 @@
 
             loop(timestamp) {
                 if (this.state === 'paused' || this.state === 'gameover') {
-                    if(this.state === 'paused') requestAnimationFrame((t) => this.loop(t)); // 멈춰있어도 루프는 유지 (재개 위해)
+                    if(this.state === 'paused') this.scheduleFrame(); // 멈춰있어도 루프는 유지 (재개 위해)
                 return;
             }
             
@@ -1696,7 +1493,13 @@
                     this.draw();
                 }
 
-                requestAnimationFrame((t) => this.loop(t));
+                this.scheduleFrame();
+            }
+
+            // 다음 화면 예약은 늘 하나만 (상점·랭킹을 닫을 때 loop를 또 부르면 게임이 2배, 3배로 빨라지던 문제 방지)
+            scheduleFrame() {
+                if (this.rafId) cancelAnimationFrame(this.rafId);
+                this.rafId = requestAnimationFrame((t) => { this.rafId = 0; this.loop(t); });
             }
 
             update(dt, timestamp) {
@@ -1948,19 +1751,7 @@
                 document.getElementById('hpText').innerText = `HP ${Math.ceil(this.player.hp)}/${this.player.maxHp}`;
                 document.getElementById('goldDisplay').innerText = this.gold;
 
-                // 닉네임 표시
-                console.log('닉네임 표시:', currentUser);
-                const nicknameEl = document.getElementById('user-nickname');
-                const nicknameDisplayEl = document.getElementById('nickname-display');
-
-                const displayName = currentUser || '알 수 없음';
-
-                if (nicknameEl) {
-                    nicknameEl.innerText = displayName;
-                }
-                if (nicknameDisplayEl) {
-                    nicknameDisplayEl.innerText = `닉네임: ${displayName}`;
-                }
+                updateNicknameLabels();
 
                 // 난이도 표시
                 const sec = this.gameTime / 1000;
@@ -2055,10 +1846,10 @@
                     console.log("🏆 최고 콤보 갱신:", this.bestCombo);
                 }
 
-                // 로컬 랭킹 저장 (오프라인 랭킹 시스템)
-                console.log("💾 로컬 랭킹 저장 시작");
-                this.saveLocalRanking();
-                console.log("✅ 로컬 랭킹 저장 완료");
+                if (this.player.level > (parseInt(localStorage.getItem('mathBestLevel')) || 0)) {
+                    localStorage.setItem('mathBestLevel', this.player.level);
+                    isNewRecord = true;
+                }
 
                 // 랭킹 전송 (중요: 페이지가 리로드되기 전에 전송 완료를 기다려야 함)
                 console.log("📤 GAS 랭킹 전송 프로세스 시작");
@@ -2102,80 +1893,6 @@
                     level: this.player.level
                 };
                 localStorage.setItem('mathSaveData', JSON.stringify(saveData));
-            }
-
-            saveLocalRanking() {
-                console.log("💽 saveLocalRanking 함수 시작");
-
-                if (!currentUser) {
-                    console.log("❌ 사용자 정보 없음 - 로컬 랭킹 저장 취소");
-                    return;
-                }
-
-                const survivalTime = Math.floor(this.gameTime / 1000);
-                const accuracy = this.stats.attempts > 0 ? ((this.stats.correct / this.stats.attempts) * 100).toFixed(1) : 0;
-
-                const rankingEntry = {
-                    username: currentUser,
-                    level: this.player.level,
-                    problems: this.stats.correct,
-                    maxCombo: this.stats.maxCombo,
-                    survivalTime: survivalTime,
-                    attempts: this.stats.attempts,
-                    timestamp: new Date().toISOString()
-                };
-
-                console.log("📝 생성된 랭킹 항목:", rankingEntry);
-
-                // 기존 로컬 랭킹 불러오기
-                let localRankings = [];
-                const saved = localStorage.getItem('localRankings');
-                console.log("📚 기존 로컬 랭킹 데이터:", saved ? "있음" : "없음");
-
-                if (saved) {
-                    try {
-                        localRankings = JSON.parse(saved);
-                        console.log("📖 로컬 랭킹 파싱 성공, 항목 수:", localRankings.length);
-                    } catch (e) {
-                        console.error("❌ 로컬 랭킹 데이터 파싱 실패:", e);
-                        localRankings = [];
-                    }
-                }
-
-                // 동일 사용자의 기존 기록 찾기
-                const existingIndex = localRankings.findIndex(r => r.username === currentUser);
-                console.log("🔍 기존 사용자 기록 찾기:", existingIndex >= 0 ? `인덱스 ${existingIndex}에 있음` : "새로운 사용자");
-
-                if (existingIndex >= 0) {
-                    // 기존 기록 업데이트 (더 좋은 기록으로)
-                    const existing = localRankings[existingIndex];
-                    const shouldUpdate = rankingEntry.level > existing.level ||
-                        rankingEntry.problems > existing.problems ||
-                        rankingEntry.maxCombo > existing.maxCombo ||
-                        rankingEntry.survivalTime > existing.survivalTime;
-
-                    if (shouldUpdate) {
-                        console.log("🔄 기존 기록 업데이트");
-                        localRankings[existingIndex] = rankingEntry;
-                    } else {
-                        console.log("⏭️ 기존 기록이 더 좋음 - 업데이트 생략");
-                    }
-                } else {
-                    // 새 기록 추가
-                    console.log("➕ 새 기록 추가");
-                    localRankings.push(rankingEntry);
-                }
-
-                // 최대 100개 기록 유지
-                if (localRankings.length > 100) {
-                    console.log("🗂️ 기록 수 제한 적용 (100개 유지)");
-                    localRankings = localRankings.slice(-100);
-                }
-
-                // 저장
-                localStorage.setItem('localRankings', JSON.stringify(localRankings));
-                console.log("✅ 로컬 랭킹 저장 완료, 총 항목 수:", localRankings.length);
-                console.log("📋 최종 저장된 랭킹 데이터:", localRankings);
             }
 
             loadGame() {
