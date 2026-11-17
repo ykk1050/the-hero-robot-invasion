@@ -25,10 +25,16 @@ const SHEET_NAME = 'Ranking';      // 새 랭킹 탭
 const LEGACY_SHEET = 'RankData';   // 예전 랭킹 탭 (읽기만 함)
 
 // 정상 플레이를 막지 않도록 넉넉하게 잡은 기준
+// 판 시작표: '작전 개시' 때 서버가 서버 시계로 시작 시각을 적고 서명한 표를 줌.
+//  게임 오버 때 그 표를 함께 받아, 실제로 흐른 시간보다 긴 생존·빠른 풀이는 잘라 냄
+//  → F12로 숫자만 고쳐서는 기록을 부풀릴 수 없고, 그만큼 실제로 시간이 흘러야 함.
 const LIMITS = {
-  MAX_SURVIVAL_SEC: 4 * 3600,        // 한 판 최장 생존 4시간
-  MAX_PROBLEMS_PER_SEC: 1,           // 한 판에서 1초에 1문제보다 빨리 풀 수 없음 (실제로는 5초 이상)
-  PROBLEMS_BUFFER: 5,
+  TICKET_MAX_AGE_MS: 24 * 3600 * 1000, // 시작표는 24시간 안에만 씀 (이어하기 포함)
+  SURVIVAL_SLACK_SEC: 30,              // 서버와 기기 시계 차이 여유
+  MIN_SEC_PER_PROBLEM: 5,              // 문장제 한 문제에 최소 5초 (실제 상위권은 9초 이상)
+  PROBLEMS_BUFFER: 2,
+  MAX_RESULTS_PER_SAVE: 10,            // 한 번에 올리는 판 결과 수
+  TICKETS_PER_DEVICE_PER_HOUR: 120,
   MIN_WRITE_INTERVAL_MS: 2000,       // 같은 닉네임은 2초에 한 번까지만 반영
   NEW_NAMES_PER_10MIN: 150,          // 서버 전체: 10분 동안 새 닉네임 150개까지
   NEW_NAMES_PER_DEVICE_PER_HOUR: 10  // 기기 하나: 1시간 동안 새 닉네임 10개까지
@@ -124,13 +130,63 @@ function allowNewName(ownerHash) {
   return true;
 }
 
-// 기록끼리 앞뒤가 맞는지 (한 판 안에서: 레벨 ≤ 정답+1, 정답 ≤ 생존 시간, 연속 정답 ≤ 정답)
+// 기록끼리 앞뒤가 맞는지 (한 판 안에서: 레벨 ≤ 정답+1, 정답 ≤ 생존 ÷ 5초, 연속 정답 ≤ 정답)
 function isPossible(r) {
-  if (r.survival > LIMITS.MAX_SURVIVAL_SEC) return false;
+  if (r.survival > LIMITS.TICKET_MAX_AGE_MS / 1000) return false;
   if (r.level > r.problems + 1) return false;
-  if (r.problems > r.survival * LIMITS.MAX_PROBLEMS_PER_SEC + LIMITS.PROBLEMS_BUFFER) return false;
+  if (r.problems > Math.floor(r.survival / LIMITS.MIN_SEC_PER_PROBLEM) + LIMITS.PROBLEMS_BUFFER) return false;
   if (r.combo > r.problems) return false;
   return true;
+}
+
+// ---------- 판 시작표 ----------
+// 서명 열쇠는 코드에 두지 않고 스크립트 속성에 한 번 만들어 둠 (코드를 봐도 표를 위조할 수 없음)
+function ticketSecret() {
+  var props = PropertiesService.getScriptProperties();
+  var secret = props.getProperty('TICKET_SECRET');
+  if (!secret) {
+    secret = Utilities.getUuid() + Utilities.getUuid();
+    props.setProperty('TICKET_SECRET', secret);
+  }
+  return secret;
+}
+
+function signTicket(startMs, ownerHash) {
+  var bytes = Utilities.computeHmacSha256Signature(startMs + '.' + ownerHash, ticketSecret());
+  return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/, '').slice(0, 32);
+}
+
+function makeTicket(ownerHash) {
+  var startMs = Date.now();
+  return startMs + '.' + signTicket(startMs, ownerHash);
+}
+
+// 이 기기가 받은 진짜 표인지 확인하고 시작 시각을 돌려줌 (아니면 null)
+function readTicket(ticket, ownerHash, now) {
+  var m = /^(\d{13})\.([A-Za-z0-9_-]{32})$/.exec(String(ticket || ''));
+  if (!m) return null;
+  var startMs = Number(m[1]);
+  if (startMs > now + 60000 || now - startMs > LIMITS.TICKET_MAX_AGE_MS) return null;
+  return signTicket(startMs, ownerHash) === m[2] ? startMs : null;
+}
+
+function allowTicket(ownerHash) {
+  var cache = CacheService.getScriptCache();
+  var key = 'ticket_' + ownerHash.slice(0, 32) + '_' + Math.floor(Date.now() / 3600000);
+  var count = Number(cache.get(key)) || 0;
+  if (count >= LIMITS.TICKETS_PER_DEVICE_PER_HOUR) return false;
+  cache.put(key, String(count + 1), 3900);
+  return true;
+}
+
+// 한 판 결과를 시작표 기준으로 잘라 냄: 생존 ≤ 실제로 흐른 시간, 정답 ≤ 생존 ÷ 5초
+function clampResult(r, startMs, now) {
+  var level = toCount(r && r.level), problems = toCount(r && r.problems);
+  var survival = toCount(r && r.survival), combo = toCount(r && r.combo);
+  if (level === null || problems === null || survival === null || combo === null) return null;
+  survival = Math.min(survival, Math.floor((now - startMs) / 1000) + LIMITS.SURVIVAL_SLACK_SEC);
+  problems = Math.min(problems, Math.floor(survival / LIMITS.MIN_SEC_PER_PROBLEM) + LIMITS.PROBLEMS_BUFFER);
+  return { level: Math.min(level, problems + 1), problems: problems, survival: survival, combo: Math.min(combo, problems) };
 }
 
 // 예전 RankData 탭에서 같은 기기(sessionId)의 최고 기록 찾기 (기기마다 한 번만 옮김)
@@ -167,6 +223,14 @@ function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
 
+    // 판 시작표 받기 (닉네임이 없어도 됨)
+    if (data.action === 'start') {
+      if (!checkToken(data.token) || Number(data.season) !== SEASON) return fail('OLD_VERSION', '게임을 새로고침한 뒤 다시 해 주세요.');
+      var startOwner = hashToken(data.token);
+      if (!allowTicket(startOwner)) return fail('TOO_MANY', '잠시 후 다시 해 주세요.');
+      return reply({ success: true, code: 'STARTED', ticket: makeTicket(startOwner) });
+    }
+
     var nickIx = parseNickId(data.username);
     if (!nickIx) return fail('BAD_NAME', '단어를 골라 만든 닉네임만 쓸 수 있어요. 게임을 새로고침해 주세요.');
     var name = nickIx.join('-');
@@ -178,10 +242,19 @@ function doPost(e) {
     var isClaim = data.action === 'claim';
     var rec = { level: 0, problems: 0, survival: 0, combo: 0 };
     if (!isClaim) {
-      rec = { level: toCount(data.level), problems: toCount(data.problems), survival: toCount(data.survival), combo: toCount(data.combo) };
-      if (rec.level === null || rec.problems === null || rec.survival === null || rec.combo === null || !isPossible(rec)) {
-        return fail('BAD_DATA', '랭킹에 올릴 수 없는 기록이에요.');
-      }
+      // 판 결과마다 이 기기가 받은 시작표가 있어야 함. 표 기준으로 잘라 낸 뒤 가장 좋은 값만 씀
+      var results = Array.isArray(data.results) ? data.results.slice(0, LIMITS.MAX_RESULTS_PER_SAVE) : [];
+      var checkNow = Date.now(), valid = 0;
+      results.forEach(function (r) {
+        var startMs = readTicket(r && r.ticket, ownerHash, checkNow);
+        if (startMs === null) return;
+        var c = clampResult(r, startMs, checkNow);
+        if (!c) return;
+        valid++;
+        rec = { level: Math.max(rec.level, c.level), problems: Math.max(rec.problems, c.problems),
+                survival: Math.max(rec.survival, c.survival), combo: Math.max(rec.combo, c.combo) };
+      });
+      if (!valid) return fail('NO_TICKET', '이 기록은 랭킹에 올릴 수 없어요.');
     }
 
     lock.waitLock(10000);

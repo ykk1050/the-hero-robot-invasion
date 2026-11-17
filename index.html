@@ -869,15 +869,35 @@
             return token;
         }
 
-        // 이 기기의 최고 기록 (닉네임을 정하기 전에 한 판도 랭킹에 들어감)
-        function getRankBest() {
-            const n = key => Math.max(0, parseInt(localStorage.getItem(key)) || 0);
-            return {
-                level: n('mathBestLevel'),
-                problems: n('mathBestProblems'),
-                survival: Math.floor(n('mathMaxTime') / 1000),
-                combo: n('mathBestCombo')
-            };
+        // ---- 판 시작표와 판 결과 ----
+        // '작전 개시' 때 서버가 시작표(서버 시계로 적은 시작 시각 + 서명)를 줌.
+        // 게임 오버 때 판 결과를 시작표와 함께 모아 두었다가 올림 (닉네임을 정하기 전 판도 24시간 안이면 나중에 올라감).
+        // 서버는 실제로 흐른 시간보다 긴 생존, 5초보다 빠른 풀이를 잘라 냄.
+        const PENDING_MAX_AGE = 24 * 3600 * 1000;
+
+        async function requestTicket() {
+            if (!rankReady()) return '';
+            try {
+                const result = await rankPost({ action: 'start' });
+                return result && result.success && typeof result.ticket === 'string' ? result.ticket : '';
+            } catch (e) {
+                return '';
+            }
+        }
+
+        function getPendingResults() {
+            const list = localStorageHelper.load('rankPending');
+            const now = Date.now();
+            return Array.isArray(list) ? list.filter(r => r && r.ticket && now - (r.at || 0) < PENDING_MAX_AGE) : [];
+        }
+
+        function addPendingResult(result) {
+            if (!result.ticket) return;
+            // 좋은 기록 순으로 10개까지만 보관
+            const list = [...getPendingResults(), result]
+                .sort((a, b) => (b.problems - a.problems) || (b.survival - a.survival))
+                .slice(0, 10);
+            localStorageHelper.save('rankPending', list);
         }
 
         // ---- 서버 요청 (시험 모드면 이 기기에만 저장) ----
@@ -886,11 +906,23 @@
             save(rows) { localStorageHelper.save('rankTestRows', rows); },
             check(id) { return { taken: !!this.rows()[id] }; },
             post(p) {
+                if (p.action === 'start') return { success: true, code: 'STARTED', ticket: 'T' + Date.now() };
                 const rows = this.rows();
                 const row = rows[p.username];
                 if (row && row.owner !== p.token) return { success: false, code: 'NAME_TAKEN', message: '이미 다른 기기에서 쓰고 있는 닉네임이에요.' };
                 const r = row || { level: 0, problems: 0, survival: 0, combo: 0, owner: p.token };
-                if (p.action !== 'claim') ['level', 'problems', 'survival', 'combo'].forEach(k => { r[k] = Math.max(r[k], p[k] || 0); });
+                if (p.action !== 'claim') {
+                    // 서버와 같은 규칙: 시작표 기준으로 잘라 냄
+                    const now = Date.now();
+                    const ok = (p.results || []).filter(x => /^T\d+$/.test(x.ticket));
+                    if (!ok.length) return { success: false, code: 'NO_TICKET', message: '이 기록은 랭킹에 올릴 수 없어요.' };
+                    ok.forEach(x => {
+                        const survival = Math.min(x.survival, Math.floor((now - Number(x.ticket.slice(1))) / 1000) + 30);
+                        const problems = Math.min(x.problems, Math.floor(survival / 5) + 2);
+                        const c = { level: Math.min(x.level, problems + 1), problems, survival, combo: Math.min(x.combo, problems) };
+                        ['level', 'problems', 'survival', 'combo'].forEach(k => { r[k] = Math.max(r[k], c[k]); });
+                    });
+                }
                 rows[p.username] = r;
                 this.save(rows);
                 return { success: true, code: p.action === 'claim' ? 'CLAIMED' : 'SAVED' };
@@ -1115,21 +1147,23 @@
             await renderRanking();
         }
 
-        // 이 기기의 최고 기록을 랭킹에 올림 (서버는 더 높은 값만 남김)
+        // 모아 둔 판 결과를 랭킹에 올림 (서버는 닉네임마다 더 높은 값만 남김)
         async function uploadToRanking() {
             if (!currentUser || !rankReady()) return;
-            const best = getRankBest();
-            if (best.level <= 1 && best.problems === 0 && best.survival === 0) return;
+            const results = getPendingResults();
+            if (!results.length) return;
+            let result;
             try {
-                const result = await rankPost({ action: 'save', username: currentUser, ...best });
-                if (result.code === 'NAME_TAKEN') {
-                    showToast('이 닉네임은 다른 기기에서 쓰고 있어요. 랭킹에서 닉네임을 바꿔 주세요.');
-                } else if (['BAD_NAME', 'BAD_DATA', 'OLD_VERSION', 'TOO_MANY'].includes(result.code)) {
-                    showToast(result.message);
-                }
+                result = await rankPost({ action: 'save', username: currentUser, results });
             } catch (error) {
-                // 연결이 안 되면 다음에 랭킹을 열거나 게임이 끝날 때 다시 올림
+                return;   // 연결이 안 되면 다음에 랭킹을 열거나 게임이 끝날 때 다시 올림
             }
+            if (result.code === 'NAME_TAKEN') {
+                showToast('이 닉네임은 다른 기기에서 쓰고 있어요. 랭킹에서 닉네임을 바꿔 주세요.');
+                return;
+            }
+            if (result.code === 'TOO_FAST' || result.code === 'ERROR' || result.code === 'TOO_MANY') return;   // 그대로 두고 다음에 다시
+            localStorageHelper.save('rankPending', []);   // 올렸거나(SAVED), 올릴 수 없는 기록(NO_TICKET 등)
         }
 
         const RANK_LABEL = { level: '레벨', problems: '문제', survival: '' };
@@ -1450,6 +1484,10 @@
             start() {
                 document.getElementById('start-screen').style.display = 'none';
                 this.state = 'playing';
+                // 판 시작표 받기 (인터넷이 안 되면 이 판은 랭킹에 안 올라감)
+                this.ticket = '';
+                this.ticketAt = Date.now();
+                requestTicket().then(t => { if (this.state !== 'gameover') this.ticket = t; });
                 this.resize();
                 this.player.x = canvas.width / 2;
                 this.player.y = canvas.height / 2;
@@ -1851,6 +1889,16 @@
                     isNewRecord = true;
                 }
 
+                // 이번 판 결과를 시작표와 함께 모아 둠 (닉네임이 없으면 나중에 정할 때 올라감)
+                addPendingResult({
+                    ticket: this.ticket || '',
+                    at: this.ticketAt || Date.now(),
+                    level: this.player.level,
+                    problems: this.stats.correct,
+                    survival: Math.floor(this.gameTime / 1000),
+                    combo: this.stats.maxCombo
+                });
+
                 // 랭킹 전송 (중요: 페이지가 리로드되기 전에 전송 완료를 기다려야 함)
                 console.log("📤 GAS 랭킹 전송 프로세스 시작");
                 try {
@@ -1890,7 +1938,9 @@
                     // 여기서는 적 정보는 초기화하고 난이도(시간)만 유지하는 방식으로 타협할 수도 있지만,
                     // 정확한 복구를 위해 적 정보도 일부 저장
                     // 다만 적이 너무 많으면 로컬스토리지 용량 이슈가 있을 수 있음 (텍스트라 괜찮을 듯)
-                    level: this.player.level
+                    level: this.player.level,
+                    ticket: this.ticket || '',
+                    ticketAt: this.ticketAt || 0
                 };
                 localStorage.setItem('mathSaveData', JSON.stringify(saveData));
             }
@@ -1909,6 +1959,8 @@
                     this.skills = data.skills;
                     Object.assign(this.stats, data.stats);
                     this.spawnRate = data.spawnRate;
+                    this.ticket = typeof data.ticket === 'string' ? data.ticket : '';
+                    this.ticketAt = data.ticketAt || 0;
 
                     // HUD 갱신
                     this.updateHUD();
