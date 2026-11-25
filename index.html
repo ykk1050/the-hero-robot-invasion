@@ -73,7 +73,7 @@
             .submit-btn { display: none; } /* 모바일에서는 키패드 엔터 사용 */
             
             /* 모바일 키패드 최적화 */
-            .virtual-keypad button { padding: 8px !important; font-size: 1.2rem !important; line-height: 1.2 !important; }
+            .virtual-keypad button { padding: 6px !important; min-height: 44px; font-size: 1.2rem !important; line-height: 1.2 !important; }
             .input-group { margin-bottom: 5px !important; }
             
             /* 모바일에서 UI 위치 조정 */
@@ -99,6 +99,27 @@
         }
         @media (min-width: 769px) and (max-width: 1024px) {
             .skill-slot { width: 60px !important; height: 60px !important; }
+        }
+
+        /* 태블릿 가로(갤럭시 탭 1280×720, 아이패드 1180×820): 문제·키패드·제출 버튼이 스크롤 없이 보이게 */
+        @media (min-width: 769px) and (max-height: 900px) {
+            #sidebar { padding: 12px 16px !important; }
+            .sidebar-header, #sidebar hr, .keypad-tip { display: none !important; }
+            .math-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 8px !important; margin-bottom: 8px !important; flex-shrink: 0; }
+            .math-stats .stat-row { display: none; flex-direction: column; align-items: center; gap: 2px; margin: 0 !important; font-size: 0.8rem !important; text-align: center; }
+            .math-stats .stat-row:nth-child(3), .math-stats .stat-row:nth-child(5), .math-stats .stat-row:nth-child(7) { display: flex; }
+            .math-stats .stat-row span:first-child { font-size: 0.72rem; }
+            #quiz-container { flex-grow: 0 !important; }
+            .problem-box { font-size: 1.25rem !important; line-height: 1.45 !important; padding: 12px 16px !important; margin-bottom: 10px !important; }
+            .input-group { margin-bottom: 0 !important; }
+            .answer-input { padding: 10px !important; font-size: 1.4rem !important; margin-bottom: 0 !important; }
+            .virtual-keypad { gap: 6px !important; margin-top: 8px !important; }
+            .virtual-keypad button { padding: 8px !important; min-height: 62px; line-height: 1.2 !important; }
+        }
+        @media (min-width: 769px) and (max-height: 660px) {
+            .math-stats { display: none !important; }
+            .virtual-keypad button { min-height: 48px; }
+            .problem-box { font-size: 1.1rem !important; line-height: 1.35 !important; }
         }
 
         /* === 좌측 게임 영역 === */
@@ -759,12 +780,52 @@
             }
         })();
 
+        // 저장소: 다른 게임(소수의 검 등)도 같은 주소(github.io)라 저장 공간을 함께 쓰므로,
+        // 이름 앞에 반드시 'avghero_'를 붙임. 앞글자 없는 이름은 읽기만 하고 절대 지우거나 덮어쓰지 않음.
+        // 저장이 막힌 기기에서는 메모리에만 두고 게임을 계속함.
+        const store = (() => {
+            const PREFIX = 'avghero_';
+            const memory = new Map();
+            const raw = {
+                get(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } },
+                set(k, v) { try { window.localStorage.setItem(k, v); return true; } catch (e) { return false; } },
+                del(k) { try { window.localStorage.removeItem(k); return true; } catch (e) { return false; } }
+            };
+            const api = {
+                getItem(k) {
+                    if (memory.has(k)) return memory.get(k);
+                    return raw.get(PREFIX + k);
+                },
+                setItem(k, v) {
+                    v = String(v);
+                    if (raw.set(PREFIX + k, v)) memory.delete(k);
+                    else memory.set(k, v);
+                },
+                removeItem(k) {
+                    memory.delete(k);
+                    if (!raw.del(PREFIX + k)) memory.set(k, null);
+                }
+            };
+            // 0.033까지 앞글자 없이 저장한 값을 한 번만 옮겨 옴 (원래 값은 그대로 둠)
+            if (api.getItem('moved') === null) {
+                ['mathSaveData', 'mathMaxTime', 'mathBestProblems', 'mathBestCombo', 'mathBestLevel', 'mathGlobalTotalProblems',
+                 'mathGlobalAttempts', 'mathGlobalCorrect', 'mathGlobalWrong', 'mathHeroSessionId', 'nickId', 'playerToken', 'rankPending'].forEach(k => {
+                    const v = raw.get(k);
+                    if (v !== null && api.getItem(k) === null) api.setItem(k, v);
+                });
+                // '내 닉네임' 목록은 소수의 검 닉네임과 섞여 있으므로 이 게임에서 쓰던 것만
+                const nick = api.getItem('nickId');
+                if (nick !== null && api.getItem('myNicks') === null) api.setItem('myNicks', `[${nick}]`);
+                api.setItem('moved', '1');
+            }
+            return api;
+        })();
+
         // localStorage 헬퍼 함수
         const localStorageHelper = {
             save: function(key, data) {
                 try {
-                    localStorage.setItem(key, JSON.stringify(data));
-                    console.log(`${key} 저장 완료:`, data);
+                    store.setItem(key, JSON.stringify(data));
                     return true;
                 } catch (error) {
                     console.error('저장 실패:', error);
@@ -774,9 +835,8 @@
 
             load: function(key) {
                 try {
-                    const data = localStorage.getItem(key);
+                    const data = store.getItem(key);
                     if (data) {
-                        console.log(`${key} 로드 완료`);
                         return JSON.parse(data);
                     }
                     return null;
@@ -788,7 +848,7 @@
 
             remove: function(key) {
                 try {
-                    localStorage.removeItem(key);
+                    store.removeItem(key);
                     console.log(`${key} 삭제 완료`);
                     return true;
                 } catch (error) {
@@ -837,13 +897,10 @@
             localStorageHelper.save('myNicks', [id, ...getMyNicks().filter(x => x !== id)].slice(0, 20));
         }
 
-        // 저장된 닉네임 불러오기 (예전 직접 입력 닉네임은 쓰지 않음)
+        // 저장된 닉네임 불러오기
         function loadUsername() {
             const saved = localStorageHelper.load('nickId');
             currentUser = parseNickId(saved) ? saved : '';
-            ['mathHeroName', 'username', 'localRankings'].forEach(k => {
-                try { localStorage.removeItem(k); } catch (e) {}
-            });
             updateNicknameLabels();
         }
 
@@ -1119,7 +1176,7 @@
             let result;
             try {
                 // 예전 방식 기기 표시(sessionId)를 보내면, 새 닉네임을 처음 만들 때 예전 기록을 옮겨 받음
-                const legacy = localStorage.getItem('mathHeroSessionId') || '';
+                const legacy = store.getItem('mathHeroSessionId') || '';
                 result = await rankPost({ action: 'claim', username: id, legacy });
             } catch (error) {
                 setNickStatus('랭킹 서버에 연결하지 못했어요. 잠시 후 다시 눌러 주세요', 'bad');
@@ -1140,7 +1197,7 @@
             addMyNick(id);
             renderNickBuilder();
             if (result.migrated) {
-                try { localStorage.removeItem('mathHeroSessionId'); } catch (e) {}
+                store.removeItem('mathHeroSessionId');
             }
             setNickStatus(result.migrated ? '✔ 닉네임이 정해졌어요! 예전 기록도 옮겨 왔어요' : '✔ 닉네임이 정해졌어요!', 'ok');
             await uploadToRanking();
@@ -1162,8 +1219,10 @@
                 showToast('이 닉네임은 다른 기기에서 쓰고 있어요. 랭킹에서 닉네임을 바꿔 주세요.');
                 return;
             }
-            if (result.code === 'TOO_FAST' || result.code === 'ERROR' || result.code === 'TOO_MANY') return;   // 그대로 두고 다음에 다시
-            localStorageHelper.save('rankPending', []);   // 올렸거나(SAVED), 올릴 수 없는 기록(NO_TICKET 등)
+            // 올린 것(SAVED)과 올릴 수 없는 것(NO_TICKET)만 지우고, 그 밖의 응답이면 그대로 두었다가 다음에 다시 올림
+            if (!result.success && result.code !== 'NO_TICKET') return;
+            const sent = new Set(results.map(r => r.ticket));
+            localStorageHelper.save('rankPending', getPendingResults().filter(r => !sent.has(r.ticket)));
         }
 
         const RANK_LABEL = { level: '레벨', problems: '문제', survival: '' };
@@ -1258,7 +1317,7 @@
         // 작전 개시: 닉네임이 없어도 바로 시작 (닉네임은 랭킹 창에서 만듦)
         function checkNameAndStart() {
             loadUsername();
-            if (localStorage.getItem('mathSaveData')) {
+            if (store.getItem('mathSaveData')) {
                 if (confirm("저장된 게임이 있습니다. 이어하시겠습니까?")) {
                     if (game.loadGame()) {
                         document.getElementById('start-screen').style.display = 'none';
@@ -1272,7 +1331,7 @@
                         return;
                     }
                 } else {
-                    localStorage.removeItem('mathSaveData');
+                    store.removeItem('mathSaveData');
                 }
             }
             startGame();
@@ -1386,8 +1445,23 @@
         const gameArea = document.getElementById('game-area');
 
         // 이미지
-        const imgHero = new Image(); imgHero.src = 'hero.png';
-        const imgEnemy = new Image(); imgEnemy.src = 'devilking.png';
+        // 인터넷이 불안해 그림을 못 받으면 몇 번 다시 받고, 그동안은 동그라미로 그림 (게임이 멈추지 않게)
+        function loadSprite(src) {
+            const img = new Image();
+            let tries = 0;
+            img.onerror = () => { if (++tries <= 5) setTimeout(() => { img.src = `${src}?r=${tries}`; }, 1000 * tries); };
+            img.src = src;
+            return img;
+        }
+        const imgHero = loadSprite('hero.png');
+        const imgEnemy = loadSprite('devilking.png');
+        function drawSprite(img, x, y, size, color) {
+            if (img.complete && img.naturalWidth > 0) { ctx.drawImage(img, x, y, size, size); return; }
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(x + size / 2, y + size / 2, size * 0.4, 0, Math.PI * 2);
+            ctx.fill();
+        }
 
         // 전역 변수
         let currentProblem = null;
@@ -1443,23 +1517,26 @@
 
                 // 누적 통계 (로봇공격 방어 지원실 표시용)
                 this.globalStats = {
-                    totalProblems: parseInt(localStorage.getItem('mathGlobalTotalProblems')) || 0,
-                    attempts: parseInt(localStorage.getItem('mathGlobalAttempts')) || 0,
-                    correct: parseInt(localStorage.getItem('mathGlobalCorrect')) || 0,
-                    wrong: parseInt(localStorage.getItem('mathGlobalWrong')) || 0
+                    totalProblems: parseInt(store.getItem('mathGlobalTotalProblems')) || 0,
+                    attempts: parseInt(store.getItem('mathGlobalAttempts')) || 0,
+                    correct: parseInt(store.getItem('mathGlobalCorrect')) || 0,
+                    wrong: parseInt(store.getItem('mathGlobalWrong')) || 0
                 };
 
                 // 로컬 스토리지에서 최고 기록 불러오기
-                this.highScore = localStorage.getItem('mathHighLv') || 1;
-                this.maxTime = parseFloat(localStorage.getItem('mathMaxTime')) || 0; // ms 단위
+                this.highScore = store.getItem('mathHighLv') || 1;
+                this.maxTime = parseFloat(store.getItem('mathMaxTime')) || 0; // ms 단위
                 
                 // 역대 최고 콤보 등 추가 기록
-                this.bestCombo = parseInt(localStorage.getItem('mathBestCombo')) || 0;
-                this.bestProblems = parseInt(localStorage.getItem('mathBestProblems')) || 0;
+                this.bestCombo = parseInt(store.getItem('mathBestCombo')) || 0;
+                this.bestProblems = parseInt(store.getItem('mathBestProblems')) || 0;
 
                 window.addEventListener('resize', () => this.resize());
                 // 페이지 종료 시 저장
                 window.addEventListener('beforeunload', () => this.saveGame());
+                // 패드에서는 beforeunload가 안 올 수 있어서 화면을 내릴 때도 저장
+                window.addEventListener('pagehide', () => this.saveGame());
+                document.addEventListener('visibilitychange', () => { if (document.hidden) this.saveGame(); });
                 
                 this.resize();
             }
@@ -1475,10 +1552,13 @@
                 // 사이드바를 제외한 크기
                 canvas.width = gameArea.clientWidth;
                 canvas.height = gameArea.clientHeight;
-                if (this.player.x === 0) {
-                    this.player.x = canvas.width / 2;
-                    this.player.y = canvas.height / 2;
-                }
+                // 화면이 돌아가거나 크기가 바뀌면 용사는 늘 가운데, 적·총알은 용사와의 거리를 지킴
+                const dx = canvas.width / 2 - this.player.x;
+                const dy = canvas.height / 2 - this.player.y;
+                this.player.x += dx;
+                this.player.y += dy;
+                [this.enemies, this.bullets, this.particles, this.floatingTexts].forEach(list => list.forEach(o => { o.x += dx; o.y += dy; }));
+                if (this.state === 'paused') this.draw();
             }
 
             start() {
@@ -1500,15 +1580,17 @@
                 this.nextProblem(); // 첫 문제 출제
             }
 
-            nextProblem() {
+            nextProblem(saved) {
                 // 퀴즈 모드로 전환
+                this.rewardOpen = false;
+                this.problemAt = performance.now();
                 document.getElementById('quiz-container').style.display = 'flex';
                 document.getElementById('upgrade-container').style.display = 'none';
                 document.getElementById('answer-input').value = '';
                 document.getElementById('answer-input').focus();
 
-                currentProblem = this.mathGen.generateProblem(this.player.level);
-                currentProblem.attempted = false; // 새로운 문제이므로 시도 플래그 초기화
+                currentProblem = saved || this.mathGen.generateProblem(this.player.level);
+                if (!saved) currentProblem.attempted = false; // 새로운 문제이므로 시도 플래그 초기화
 
                 // 문제 생성 시에는 카운트하지 않고, 실제 답을 시도할 때 카운트
                 this.updateHUD(); // 즉시 반영
@@ -1668,7 +1750,7 @@
 
                 // Enemies
                 this.enemies.forEach(e => {
-                    ctx.drawImage(imgEnemy, e.x - e.radius, e.y - e.radius, e.radius*2, e.radius*2);
+                    drawSprite(imgEnemy, e.x - e.radius, e.y - e.radius, e.radius*2, '#b83280');
                     // HP Bar
                     ctx.fillStyle = 'red'; ctx.fillRect(e.x-15, e.y-e.radius-8, 30, 4);
                     ctx.fillStyle = 'green'; ctx.fillRect(e.x-15, e.y-e.radius-8, 30*(e.hp/e.maxHp), 4);
@@ -1688,7 +1770,7 @@
                 
                 // 플레이어 크기 (모바일 안드로이드에서는 1/3 축소)
                 const half = 70 * this.scale;
-                ctx.drawImage(imgHero, -half, -half, half*2, half*2);
+                drawSprite(imgHero, -half, -half, half*2, '#4299e1');
                 
                 if(this.isInvincible) {
                     ctx.beginPath(); ctx.strokeStyle='#00ffff'; ctx.lineWidth=3;
@@ -1845,19 +1927,22 @@
                 const modal = document.getElementById('shop-modal');
                 if(modal.style.display==='flex') {
                     modal.style.display='none';
+                    if (this.state !== 'paused') return;   // 게임 오버면 다시 시작하지 않음
                     this.lastTime = performance.now();
                     this.state='playing';
                     this.loop(this.lastTime);
-            } else {
+                } else {
+                    if (this.state !== 'playing') return;
                     modal.style.display='flex';
                     this.state='paused';
                     document.getElementById('shop-gold').innerText=this.gold;
                 }
             }
-            
+
             async gameOver() {
                 if (this.state === 'gameover') return;
                 this.state = 'gameover';
+                store.removeItem('mathSaveData');   // 진 판은 바로 지움 (창을 닫아도 이어할 수 없음)
                 document.getElementById('sfx-over').play().catch(()=>{});
 
                 console.log("🎮 게임 오버 - 기록 분석 시작");
@@ -1867,25 +1952,25 @@
                 let isNewRecord = false;
                 if (this.gameTime > this.maxTime) {
                     this.maxTime = this.gameTime;
-                    localStorage.setItem('mathMaxTime', this.maxTime);
+                    store.setItem('mathMaxTime', this.maxTime);
                     isNewRecord = true;
                     console.log("🏆 최고 생존시간 갱신:", this.formatTime(this.maxTime));
                 }
                 if (this.stats.correct > this.bestProblems) {
                     this.bestProblems = this.stats.correct;
-                    localStorage.setItem('mathBestProblems', this.bestProblems);
+                    store.setItem('mathBestProblems', this.bestProblems);
                     isNewRecord = true;
                     console.log("🏆 최고 정답수 갱신:", this.bestProblems);
                 }
                 if (this.stats.maxCombo > this.bestCombo) {
                     this.bestCombo = this.stats.maxCombo;
-                    localStorage.setItem('mathBestCombo', this.bestCombo);
+                    store.setItem('mathBestCombo', this.bestCombo);
                     isNewRecord = true;
                     console.log("🏆 최고 콤보 갱신:", this.bestCombo);
                 }
 
-                if (this.player.level > (parseInt(localStorage.getItem('mathBestLevel')) || 0)) {
-                    localStorage.setItem('mathBestLevel', this.player.level);
+                if (this.player.level > (parseInt(store.getItem('mathBestLevel')) || 0)) {
+                    store.setItem('mathBestLevel', this.player.level);
                     isNewRecord = true;
                 }
 
@@ -1912,8 +1997,6 @@
                     console.error("❌ GAS 랭킹 전송 중 오류 또는 타임아웃:", e);
                 }
 
-                localStorage.removeItem('mathSaveData');
-
                 let msg = `게임 오버!\n생존 시간: ${this.formatTime(this.gameTime)}\n이번 판 해결: ${this.stats.correct}문제`;
                 if(isNewRecord) msg += `\n🎉 새로운 최고 기록 달성!`;
 
@@ -1934,40 +2017,57 @@
                     skills: this.skills,
                     stats: this.stats,
                     spawnRate: this.spawnRate,
-                    // 적들 위치까지 저장하면 좋지만 너무 많으므로 생략하거나 간략히 저장
-                    // 여기서는 적 정보는 초기화하고 난이도(시간)만 유지하는 방식으로 타협할 수도 있지만,
-                    // 정확한 복구를 위해 적 정보도 일부 저장
-                    // 다만 적이 너무 많으면 로컬스토리지 용량 이슈가 있을 수 있음 (텍스트라 괜찮을 듯)
                     level: this.player.level,
                     ticket: this.ticket || '',
-                    ticketAt: this.ticketAt || 0
+                    ticketAt: this.ticketAt || 0,
+                    // 적은 용사와의 거리로 저장 (화면 크기가 달라져도 같은 위치)
+                    enemies: this.enemies.slice(0, 200).map(e => ({
+                        dx: Math.round(e.x - this.player.x), dy: Math.round(e.y - this.player.y),
+                        hp: e.hp, maxHp: e.maxHp, speed: e.speed
+                    })),
+                    problem: currentProblem,
+                    reward: this.rewardOpen === true
                 };
-                localStorage.setItem('mathSaveData', JSON.stringify(saveData));
+                store.setItem('mathSaveData', JSON.stringify(saveData));
             }
 
             loadGame() {
-                const json = localStorage.getItem('mathSaveData');
+                const json = store.getItem('mathSaveData');
                 if (!json) return false;
 
                 try {
                     const data = JSON.parse(json);
-                    this.gameTime = data.gameTime || 0;
+                    // 깨진 저장이면 건드리지 않고 새로 시작
+                    const num = (o, keys) => o && typeof o === 'object' && keys.every(k => Number.isFinite(o[k]));
+                    if (!num(data, ['gameTime', 'gold']) || !num(data.skills, ['bomb', 'heal', 'shield'])
+                        || !num(data.player, ['hp', 'maxHp', 'level', 'damage', 'fireRate', 'projectileCount'])
+                        || !num(data.stats, ['attempts', 'correct', 'wrong', 'combo', 'maxCombo']) || data.player.hp <= 0) {
+                        store.removeItem('mathSaveData');
+                        return false;
+                    }
+                    this.gameTime = data.gameTime;
 
-                    // 플레이어 스탯 복구
-                    Object.assign(this.player, data.player);
+                    // 플레이어 스탯 복구 (위치는 지금 화면의 가운데)
+                    const { x, y, ...savedPlayer } = data.player;
+                    Object.assign(this.player, savedPlayer);
+                    this.resize();
                     this.gold = data.gold;
                     this.skills = data.skills;
                     Object.assign(this.stats, data.stats);
-                    this.spawnRate = data.spawnRate;
                     this.ticket = typeof data.ticket === 'string' ? data.ticket : '';
                     this.ticketAt = data.ticketAt || 0;
+                    this.enemies = (Array.isArray(data.enemies) ? data.enemies : [])
+                        .filter(e => num(e, ['dx', 'dy', 'hp', 'maxHp', 'speed']))
+                        .map(e => ({ x: this.player.x + e.dx, y: this.player.y + e.dy, hp: e.hp, maxHp: e.maxHp, radius: 50 * this.scale, speed: e.speed }));
 
                     // HUD 갱신
                     this.updateHUD();
                     this.updateSkillDock();
 
-                    // 문제 텍스트 갱신 (마지막 레벨 기준 문제 재생성)
-                    this.nextProblem();
+                    // 풀던 문제 그대로 이어서 (보상을 고르던 중이면 보상 창)
+                    const pr = data.problem;
+                    this.nextProblem(pr && typeof pr.question === 'string' && Number.isFinite(pr.answer) ? pr : null);
+                    if (data.reward === true) showUpgradeChoices();
 
                     return true;
                 } catch (e) {
@@ -1992,6 +2092,7 @@
 
         function submitAnswer() {
             const input = document.getElementById('answer-input');
+            if (game.state !== 'playing' || game.rewardOpen) return;   // 게임 오버 뒤나 보상을 고르는 중에는 받지 않음
             const val = parseInt(input.value);
 
             if (isNaN(val)) {
@@ -2005,14 +2106,14 @@
                 game.stats.totalProblems++;
                 game.globalStats.totalProblems++; // 누적 증가
                 // 누적 통계 저장
-                localStorage.setItem('mathGlobalTotalProblems', game.globalStats.totalProblems);
+                store.setItem('mathGlobalTotalProblems', game.globalStats.totalProblems);
             }
 
             game.stats.attempts++;
 
             // 누적 통계 갱신
             game.globalStats.attempts++;
-            localStorage.setItem('mathGlobalAttempts', game.globalStats.attempts);
+            store.setItem('mathGlobalAttempts', game.globalStats.attempts);
 
             if (val === currentProblem.answer) {
                 game.gold += 30; // 정답 보상 30G
@@ -2026,37 +2127,11 @@
                 
                 // 누적 통계 갱신
                 game.globalStats.correct++;
-                localStorage.setItem('mathGlobalCorrect', game.globalStats.correct);
+                store.setItem('mathGlobalCorrect', game.globalStats.correct);
                 
                 game.updateHUD();
                 
-                // 업그레이드 모드로 전환
-                const quizArea = document.getElementById('quiz-container');
-                const upgradeArea = document.getElementById('upgrade-container');
-                quizArea.style.display = 'none';
-                upgradeArea.style.display = 'flex';
-                upgradeArea.innerHTML = '';
-
-                // 업그레이드 옵션 생성
-                const opts = [
-                    { name: '공격력 +10', apply: () => game.player.damage += 10 },
-                    { name: 'HP 회복 & 최대 +50', apply: () => { game.player.maxHp+=50; game.player.hp=game.player.maxHp; } },
-                    { name: '연사력 +15%', apply: () => game.player.fireRate *= 0.85 },
-                    { name: '다중 사격 +1', apply: () => game.player.projectileCount++ }
-                ];
-                
-                opts.forEach(opt => {
-                    let div = document.createElement('div');
-                    div.className = 'upgrade-card';
-                    div.innerHTML = `<div class="upgrade-title">${opt.name}</div>`;
-                    div.onclick = () => {
-                        opt.apply();
-                        showToast("업그레이드 완료!");
-                        game.player.level++;
-                        game.nextProblem();
-                    };
-                    upgradeArea.appendChild(div);
-                });
+                showUpgradeChoices();
 
             } else {
                 showToast("오답입니다! 다시 풀어보세요.");
@@ -2067,7 +2142,7 @@
                 
                 // 누적 통계 갱신
                 game.globalStats.wrong++;
-                localStorage.setItem('mathGlobalWrong', game.globalStats.wrong);
+                store.setItem('mathGlobalWrong', game.globalStats.wrong);
 
                 game.updateHUD();
                 
@@ -2076,6 +2151,36 @@
                 // 패널티: 적들 회복
                 game.enemies.forEach(e => e.hp = e.maxHp);
             }
+        }
+
+        // 정답 보상: 업그레이드 고르기
+        function showUpgradeChoices() {
+            game.rewardOpen = true;
+            const upgradeArea = document.getElementById('upgrade-container');
+            document.getElementById('quiz-container').style.display = 'none';
+            upgradeArea.style.display = 'flex';
+            upgradeArea.innerHTML = '';
+
+            const opts = [
+                { name: '공격력 +10', apply: () => game.player.damage += 10 },
+                { name: 'HP 회복 & 최대 +50', apply: () => { game.player.maxHp+=50; game.player.hp=game.player.maxHp; } },
+                { name: '연사력 +15%', apply: () => game.player.fireRate *= 0.85 },
+                { name: '다중 사격 +1', apply: () => game.player.projectileCount++ }
+            ];
+
+            opts.forEach(opt => {
+                let div = document.createElement('div');
+                div.className = 'upgrade-card';
+                div.innerHTML = `<div class="upgrade-title">${opt.name}</div>`;
+                div.onclick = () => {
+                    if (!game.rewardOpen || game.state !== 'playing') return;   // 한 번만, 전투 중에만
+                    opt.apply();
+                    showToast("업그레이드 완료!");
+                    game.player.level++;
+                    game.nextProblem();
+                };
+                upgradeArea.appendChild(div);
+            });
         }
 
         function showToast(msg) {
@@ -2130,6 +2235,7 @@
 
         // === 가상 키패드 로직 ===
         function inputKey(key) {
+            if (performance.now() - (game.problemAt || 0) < 300) return;   // 보상을 두 번 눌렀을 때 숫자가 잘못 들어가지 않게
             const input = document.getElementById('answer-input');
             if (key === 'clear') {
                 input.value = '';
@@ -2143,7 +2249,9 @@
         // 초기화 시 모바일 감지하여 readonly 설정
         (function setupMobileInput() {
             // 안드로이드 또는 iOS 감지
-            const isMobile = isAndroidDevice() || /iPhone|iPad|iPod/i.test(navigator.userAgent);
+            const isMobile = isAndroidDevice() || /iPhone|iPad|iPod/i.test(navigator.userAgent)
+                || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1)
+                || (window.matchMedia && matchMedia('(hover: none) and (pointer: coarse)').matches);
             
             if (isMobile) {
                 const input = document.getElementById('answer-input');
