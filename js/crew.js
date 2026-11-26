@@ -65,7 +65,7 @@ function renderCrewPicker() {
         card.className = 'crew-card' + (c.id === current ? ' chosen' : '') + (open ? '' : ' locked');
         card.style.setProperty('--crew', c.color);
         card.innerHTML = '<img alt=""><b></b><span class="crew-skill"></span><span class="crew-how"></span>';
-        card.querySelector('img').src = `images/hero_${c.id}.webp`;
+        card.querySelector('img').src = `images/hero_${c.id}.webp?v=${window.VERSION}`;
         card.querySelector('b').textContent = c.name;
         card.querySelector('.crew-skill').textContent = open ? `${c.icon} ${c.skill}` : '🔒 잠김';
         card.querySelector('.crew-how').textContent = open ? c.gesture : `${c.unlock} (${Math.min(c.have(), c.need)}/${c.need})`;

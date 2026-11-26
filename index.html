@@ -851,8 +851,8 @@
     <audio id="sfx-fixed" src="sounds/boss_fixed.mp3" preload="auto"></audio>
     <audio id="sfx-tank" src="sounds/tank_move.mp3" preload="auto"></audio>
 
-  <script src="js/crew.js?v=0.036"></script>
-  <script src="js/boss.js?v=0.036"></script>
+  <script src="js/crew.js?v=0.037"></script>
+  <script src="js/boss.js?v=0.037"></script>
 
   <script>
             function formatTime(ms) {
@@ -1573,9 +1573,9 @@
         }
         const imgEnemy = loadSprite('images/robot.webp');
         const imgEnemyFixed = loadSprite('images/robot_fixed.webp');
-        const imgBoss = loadSprite('images/boss.webp');
-        const imgBossFixed = loadSprite('images/boss_fixed.webp');
-        let imgHero = loadSprite(`images/hero_${selectedCrewId()}.webp`);
+        const imgBoss = loadSprite(`images/boss.webp?v=${window.VERSION}`);
+        const imgBossFixed = loadSprite(`images/boss_fixed.webp?v=${window.VERSION}`);
+        let imgHero = loadSprite(`images/hero_${selectedCrewId()}.webp?v=${window.VERSION}`);
         // 높이에 맞춰 원래 비율대로 그림 (x, y는 가운데)
         function drawSpriteFit(img, x, y, h, color) {
             if (img.complete && img.naturalWidth > 0) {
@@ -1721,7 +1721,7 @@
             // 대원 정하기 (새 작전은 시작 화면에서 고른 대원, 이어하기는 그때 대원)
             setCrew(id) {
                 this.crew = newCrewState(crewOf(id).id);
-                imgHero = loadSprite(`images/hero_${this.crew.id}.webp`);
+                imgHero = loadSprite(`images/hero_${this.crew.id}.webp?v=${window.VERSION}`);
                 updateCrewGauge(this);
             }
 
