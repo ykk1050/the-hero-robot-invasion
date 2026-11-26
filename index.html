@@ -566,6 +566,18 @@
         }
         @media (max-height: 640px) and (min-width: 561px) { .crew-card img { height: 78px; } .start-btn { padding: 8px 40px !important; } }
 
+        /* 공지 (시즌·패치 예고) */
+        .notice-banner {
+            display: flex; align-items: center; gap: 10px; max-width: 760px; margin: 0 auto 12px; padding: 8px 14px;
+            border-radius: 12px; border: 2px solid #f6ad55; background: rgba(66, 40, 10, 0.75); color: #fefcbf;
+            font-size: 0.95rem; line-height: 1.45; text-align: left; word-break: keep-all;
+        }
+        .notice-banner > b { flex-shrink: 0; color: #f6ad55; font-weight: normal; font-size: 1.05rem; }
+        .notice-banner span b { color: #fbd38d; font-weight: normal; }
+        #start-screen .notice-banner { margin: 0; }
+        @media (max-width: 560px) { .notice-banner { font-size: 0.82rem; padding: 6px 10px; gap: 6px; } }
+        @media (max-height: 640px) and (min-width: 561px) { #start-screen .notice-banner { font-size: 0.85rem; padding: 5px 12px; } }
+
         /* 손동작: 전투 화면을 만지는 동안 스크롤·확대되지 않게 */
         #gameCanvas { touch-action: none; }
         .hud-top, .skill-dock { pointer-events: none !important; }
@@ -748,6 +760,7 @@
         <h1>평균의 수호자</h1>
         <p class="story">우주 로봇들이 <b>치우침 바이러스</b>에 걸려 에너지가 한쪽으로 쏠렸어요.<br>
             평균의 힘으로 에너지를 <b>고르게</b> 되돌려 로봇들을 구해 주세요!</p>
+        <div class="notice-banner"><b>📢 예고</b><span>이번 주말(11월 28~29일) <b>밸런스 패치</b>가 있어요! 강화 균형을 새로 맞추고 <b>새 시즌 랭킹</b>이 시작돼요. 지금까지의 기록은 시즌 1로 마무리되고, 새 시즌은 모두 0부터 겨뤄요.</span></div>
         <div id="crew-picker"></div>
         <div id="crew-guide"></div>
         <button class="start-btn" onclick="checkNameAndStart()">작전 개시</button>
@@ -783,6 +796,7 @@
             <button onclick="closeRankingModal()" aria-label="닫기" style="float: right; background: none; border: none; color: #e2e8f0; font-size: 1.8rem; line-height: 1; cursor: pointer; padding: 0 4px;">✕</button>
             <h2 style="color: #a18cd1; margin-top: 0;">🏆 글로벌 랭킹</h2>
             <p style="color: #888; font-size: 0.9rem; margin-bottom: 15px; text-align: center;">다른 요원들과 기록을 겨뤄 보세요! 단어를 골라 나만의 닉네임을 만들어요.</p>
+            <div class="notice-banner"><b>📢 예고</b><span>이번 주말(11월 28~29일) <b>밸런스 패치</b>가 있어요! 강화 균형을 새로 맞추고 <b>새 시즌 랭킹</b>이 시작돼요. 지금까지의 기록은 시즌 1로 마무리되고, 새 시즌은 모두 0부터 겨뤄요.</span></div>
 
             <!-- 닉네임 만들기 (단어 4개 조합) -->
             <div style="background: linear-gradient(145deg, #e6fffa, #b2f5ea); border: 2px solid #38b2ac; border-radius: 15px; padding: 15px; margin-bottom: 20px; text-align: center; color: #234e52;">
