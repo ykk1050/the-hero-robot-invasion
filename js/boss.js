@@ -172,8 +172,9 @@ function checkTanks() {
 }
 
 function breakShield(b) {
+    if (!b.shield || !game.enemies.includes(b)) { b.solved = false; return; }
+    if (game.state === 'paused') { setTimeout(() => breakShield(b), 300); return; }   // 상점에 있으면 돌아올 때까지 기다림
     b.solved = false;
-    if (!b.shield || !game.enemies.includes(b)) return;
     b.shield = false;
     b.stunUntil = game.gameTime + 7000;
     game.shakeBy(0.6);

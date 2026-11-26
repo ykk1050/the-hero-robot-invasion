@@ -851,8 +851,8 @@
     <audio id="sfx-fixed" src="sounds/boss_fixed.mp3" preload="auto"></audio>
     <audio id="sfx-tank" src="sounds/tank_move.mp3" preload="auto"></audio>
 
-  <script src="js/crew.js?v=0.037"></script>
-  <script src="js/boss.js?v=0.037"></script>
+  <script src="js/crew.js?v=0.038"></script>
+  <script src="js/boss.js?v=0.038"></script>
 
   <script>
             function formatTime(ms) {
@@ -1405,6 +1405,7 @@
             if (typeof game !== 'undefined' && game.state === 'playing') {
                 game.state = 'paused';
                 pausedByRanking = true;
+                pauseAllSound();
             }
             loadUsername();
             if (currentUser) nickPick = parseNickId(currentUser);
@@ -1421,6 +1422,7 @@
                 pausedByRanking = false;
                 game.state = 'playing';
                 game.lastTime = performance.now();
+                resumeMusic();
                 game.loop(game.lastTime);
             }
             pausedByRanking = false;
@@ -1629,6 +1631,8 @@
                 this.floatingTexts = [];
                 this.crew = newCrewState('blaster');   // 대원과 기술 상태
                 this.orbs = [];          // 보스가 쏜 에너지 덩어리
+                this.waves = [];         // 구조 파동
+                this.flash = 0;
                 this.rescues = [];       // 고쳐져서 떠나는 로봇
                 this.bossCount = 0;
                 this.nextBossAt = BOSS_EVERY;
@@ -1677,8 +1681,8 @@
                         document.querySelectorAll('audio').forEach(a => a.pause());
                     } else {
                         this.lastTime = performance.now();   // 내려 둔 동안은 게임 시간이 흐르지 않음
+                        if (this.state === 'playing') resumeMusic();   // 상점·랭킹 창이 열려 있으면 조용히
                         if (this.state === 'playing' || this.state === 'paused') {
-                            document.getElementById('bgm').play().catch(()=>{});
                             this.sendBeat();
                         }
                     }
@@ -1710,7 +1714,8 @@
                 this.player.x += dx;
                 this.player.y += dy;
                 const c = this.crew;
-                [this.enemies, this.bullets, this.particles, this.floatingTexts, this.orbs, this.rescues, c.rings,
+                [this.enemies, this.bullets, this.particles, this.floatingTexts, this.orbs, this.rescues, c.rings, this.waves || [],
+                 ...(this.waves || []).map(w => w.sparks),
                  ...c.walls.map(w => w.points), c.beams.map(b => b.p), c.beams.map(b => b.q), c.drone ? [c.drone] : []]
                     .forEach(list => list.forEach(o => { o.x += dx; o.y += dy; }));
                 if (c.drone) { c.drone.tx += dx; c.drone.ty += dy; }
@@ -1896,6 +1901,7 @@
 
                 updateCrew(this, dt);
                 updateBoss(this, dt);
+                updateWaves(this, dt);
                 if (this.player.hp <= 0) { this.player.hp = 0; this.updateHUD(); this.gameOver(); return; }
 
                 // 고쳐진 로봇이 손을 흔들며 떠남
@@ -1995,6 +2001,7 @@
                 ctx.restore();
 
                 drawCrewOver(this);
+                drawWaves(this);
 
                 // Particles
                 this.particles.forEach(p => {
@@ -2178,11 +2185,13 @@
                     if (this.state !== 'paused') return;   // 게임 오버면 다시 시작하지 않음
                     this.lastTime = performance.now();
                     this.state='playing';
+                    resumeMusic();
                     this.loop(this.lastTime);
                 } else {
                     if (this.state !== 'playing') return;
                     modal.style.display='flex';
                     this.state='paused';
+                    pauseAllSound();   // 상점에서는 조용히
                     document.getElementById('shop-gold').innerText=this.gold;
                 }
             }
@@ -2506,12 +2515,8 @@
                 game.updateSkillDock();
 
                 if(type==='bomb') {
-                    // 구조 파동: 보통 로봇은 모두 고치고, 보스는 바이러스의 30%를 없앰
-                    [...game.enemies].forEach(e => {
-                        if (e.boss) game.damageEnemy(e, e.maxHp * 0.3);
-                        else game.killEnemy(game.enemies.indexOf(e));
-                    });
-                    document.getElementById('sfx-hit').play().catch(()=>{});
+                    // 구조 파동: 물결이 퍼지며 보통 로봇은 모두 고치고, 보스는 바이러스의 30%를 없앰
+                    startRescueWave(game);
                 } else if(type==='heal') {
                     game.player.hp = game.player.maxHp;
                     game.updateHUD();

@@ -90,9 +90,17 @@ function skillPower(g) {
     return g.player.damage * (1 + 0.3 * (g.player.projectileCount - 1)) * Math.sqrt(800 / Math.max(60, g.player.fireRate));
 }
 
+// 상점·랭킹 창처럼 게임을 멈춘 동안은 소리를 모두 멈추고, 다시 시작하면 배경 음악만 다시 켬
+function pauseAllSound() {
+    document.querySelectorAll('audio').forEach(a => a.pause());
+}
+function resumeMusic() {
+    if (!document.hidden) document.getElementById('bgm').play().catch(() => {});
+}
+
 function playSound(id) {
     const a = document.getElementById(id);
-    if (!a) return;
+    if (!a || (typeof game !== 'undefined' && game.state !== 'playing')) return;
     try { a.currentTime = 0; } catch (e) { /* 아직 못 받은 소리 */ }
     a.play().catch(() => {});
 }
@@ -237,6 +245,107 @@ function updateCrew(g, dt) {
         d.fireAt = g.gameTime + 300;
         d.shot = { x: best.x, y: best.y, life: 120 };
         g.damageEnemy(best, skillPower(g) * 0.42);
+    }
+}
+
+// ---------- 구조 파동 (상점 아이템) ----------
+// 용사에게 빛이 모였다가 물결로 퍼지고, 물결이 지나가는 로봇부터 차례로 고쳐짐 (보스는 바이러스 30%)
+const WAVE_CHARGE = 250, WAVE_SPREAD = 950;
+function startRescueWave(g) {
+    const far = Math.max(...[[0, 0], [canvas.width, 0], [0, canvas.height], [canvas.width, canvas.height]]
+        .map(([x, y]) => Math.hypot(x - g.player.x, y - g.player.y))) + 60;
+    g.waves.push({ x: g.player.x, y: g.player.y, t: 0, r: 0, max: far, hit: new Set(), sparks: [] });
+    playSound('sfx-time');
+}
+
+function waveRadius(w) {
+    if (w.t < WAVE_CHARGE) return 0;
+    const k = Math.min(1, (w.t - WAVE_CHARGE) / WAVE_SPREAD);
+    return w.max * (1 - Math.pow(1 - k, 3));   // 처음엔 빠르고 끝으로 갈수록 천천히
+}
+
+function updateWaves(g, dt) {
+    g.waves.forEach(w => {
+        w.t += dt;
+        if (w.t >= WAVE_CHARGE && !w.released) {   // 모았던 힘을 터뜨림
+            w.released = true;
+            playSound('sfx-hit');
+            g.shakeBy(0.55);
+            g.flash = 1;
+        }
+        w.r = waveRadius(w);
+        if (w.released) {
+            [...g.enemies].forEach(e => {
+                if (w.hit.has(e) || Math.hypot(e.x - w.x, e.y - w.y) > w.r + e.radius * 0.5) return;
+                w.hit.add(e);
+                if (e.boss) g.damageEnemy(e, e.maxHp * 0.3);
+                else g.killEnemy(g.enemies.indexOf(e));
+            });
+        }
+        // 물결 둘레의 반짝이
+        if (w.released && w.r < w.max) {
+            for (let i = 0; i < 3; i++) {
+                const a = Math.random() * Math.PI * 2;
+                w.sparks.push({ x: w.x + Math.cos(a) * w.r, y: w.y + Math.sin(a) * w.r, vx: Math.cos(a) * 1.5, vy: Math.sin(a) * 1.5, life: 450 });
+            }
+        }
+        w.sparks.forEach(s => { s.life -= dt; s.x += s.vx * dt * 0.06; s.y += s.vy * dt * 0.06; });
+        w.sparks = w.sparks.filter(s => s.life > 0).slice(-160);
+    });
+    g.waves = g.waves.filter(w => w.t < WAVE_CHARGE + WAVE_SPREAD + 500);
+    g.flash = Math.max(0, (g.flash || 0) - dt / 260);
+}
+
+function drawWaves(g) {
+    const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const label = '💫 구조 파동!';
+    g.waves.forEach(w => {
+        if (w.t < WAVE_CHARGE) {   // 모으기: 용사 둘레로 빛이 빨려 들어옴
+            const k = w.t / WAVE_CHARGE;
+            ctx.strokeStyle = '#f6e05e';
+            ctx.lineWidth = 4 + 6 * k;
+            ctx.globalAlpha = 0.4 + 0.6 * k;
+            ctx.beginPath(); ctx.arc(w.x, w.y, 160 * g.scale * (1 - k) + 40 * g.scale, 0, Math.PI * 2); ctx.stroke();
+            ctx.globalAlpha = 1;
+            return;
+        }
+        const k = Math.min(1, (w.t - WAVE_CHARGE) / WAVE_SPREAD);
+        const fade = 1 - Math.max(0, (w.t - WAVE_CHARGE - WAVE_SPREAD) / 500);
+        // 물결이 지나간 안쪽은 옅은 초록
+        ctx.globalAlpha = 0.18 * (1 - k) * fade;
+        ctx.fillStyle = '#68d391';
+        ctx.beginPath(); ctx.arc(w.x, w.y, w.r, 0, Math.PI * 2); ctx.fill();
+        // 두꺼운 초록 물결 + 얇은 흰 테두리
+        [[46, '#68d391', 0.35], [18, '#9ae6b4', 0.7], [5, '#ffffff', 1]].forEach(([lw, col, al]) => {
+            ctx.globalAlpha = al * fade;
+            ctx.strokeStyle = col;
+            ctx.lineWidth = lw * (1 - 0.5 * k) * Math.max(0.7, g.scale);
+            ctx.beginPath(); ctx.arc(w.x, w.y, w.r, 0, Math.PI * 2); ctx.stroke();
+        });
+        ctx.fillStyle = '#f6e05e';
+        w.sparks.forEach(s => {
+            ctx.globalAlpha = Math.min(1, s.life / 300) * fade;
+            ctx.beginPath(); ctx.arc(s.x, s.y, 3, 0, Math.PI * 2); ctx.fill();
+        });
+        // 글자가 톡 커졌다가 사라짐
+        if (w.t < WAVE_CHARGE + 900) {
+            const tk = (w.t - WAVE_CHARGE) / 900;
+            const pop = tk < 0.2 ? 0.6 + 2.4 * tk : 1.08 - 0.08 * Math.min(1, (tk - 0.2) * 4);
+            ctx.globalAlpha = Math.min(1, (1 - tk) * 2);
+            ctx.font = Math.round(44 * Math.max(0.7, g.scale) * pop) + 'px Jua, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.lineWidth = 6;
+            ctx.strokeStyle = '#1a202c';
+            ctx.strokeText(label, w.x, w.y - 110 * g.scale);
+            ctx.fillStyle = '#f0fff4';
+            ctx.fillText(label, w.x, w.y - 110 * g.scale);
+            ctx.textAlign = 'start';
+        }
+    });
+    ctx.globalAlpha = 1;
+    if (g.flash > 0 && !reduce) {
+        ctx.fillStyle = 'rgba(240, 255, 244, ' + (0.35 * g.flash) + ')';
+        ctx.fillRect(-20, -20, canvas.width + 40, canvas.height + 40);
     }
 }
 
