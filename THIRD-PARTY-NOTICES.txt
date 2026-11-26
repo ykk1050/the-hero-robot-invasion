@@ -11,7 +11,7 @@ Created by gamtudyssam using AI
   Google Gemini로 만든 그림 (AI 생성)
 - images/hero_engineer·hero_ice·hero_drone·hero_time·boss.webp (대원 4명, 보스)
   위 그림을 참고로 Google Gemini로 만든 그림 (AI 생성, 배경을 코드로 지움)
-- images/hero_blaster·robot·robot_fixed·boss_fixed.webp
+- images/hero_blaster·robot·robot_fixed·robot_frozen·boss_fixed·boss_frozen.webp
   위 그림들을 줄이거나 색을 코드로 바꾼 것
 
 - 그 밖의 화면 그림(배경, 별, 총알, 버튼): 코드로 직접 만듦

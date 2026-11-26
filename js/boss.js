@@ -36,14 +36,11 @@ function startBoss(g) {
     const angle = (-75 + Math.random() * 80) * Math.PI / 180;   // 오른쪽 위에서 나타남 (아래쪽 버튼에 가리지 않게)
     const tanks = makeTanks(n);
     g.enemies.push({
-        boss: true, n, x: g.player.x + Math.cos(angle) * canvas.width * 0.6, y: g.player.y + Math.sin(angle) * canvas.height * 0.6,
+        boss: true, n, x: g.player.x + Math.cos(angle) * canvas.width * 0.36, y: g.player.y + Math.sin(angle) * canvas.height * 0.3,   // 화면 안에 착지
         hp, maxHp: hp, radius: 95 * g.scale, speed: 0.7, shield: true, phase: 1, phases: n >= 3 ? 2 : 1,
         tanks, first: [...tanks], shotAt: g.gameTime + 6000, stunUntil: 0, frozenUntil: 0
     });
-    g.shakeBy(0.5);
-    playSound('sfx-boss');
-    showToast('⚠️ 들쭉날쭉 보스 등장! 에너지를 고르게 나눠요');
-    showSidePanel();
+    startBossIntro(g, g.enemies[g.enemies.length - 1]);
 }
 
 function maybeStartBoss(g) {
@@ -211,11 +208,179 @@ function setupTanks() {
     window.addEventListener('pointercancel', () => { tankDown = null; });
 }
 
+// ---------- 보스 등장 연출 (약 3초) ----------
+// 예고(땅울림·그림자) → 착지(느리게 떨어짐·검은 띠) → 충격파·흔들림 → 이름표와 들쭉날쭉한 에너지 → 시작
+// 연출 동안은 전투·타이머·문제 풀이가 멈춤. 두 번째 보스부터, 또는 전에 본 학생은 화면을 누르면 건너뜀.
+// '동작 줄이기'를 켠 기기에서는 떨어짐·흔들림·충격파 없이 이름표만 짧게 보여 줌.
+const INTRO_LONG = 3200, INTRO_SHORT = 1400;
+const INTRO_LAND = 1250;   // 착지하는 순간
+
+function startBossIntro(g, b) {
+    const reduce = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+    const seen = store.getItem('bossIntroSeen') === '1';
+    store.setItem('bossIntroSeen', '1');
+    g.intro = { b, t: 0, len: reduce ? INTRO_SHORT : INTRO_LONG, reduce, skippable: seen || b.n > 1, landed: false };
+    g.state = 'intro';
+    pauseAllSound();   // 정적: 음악을 끊음
+    if (!reduce) playIntroSound('sfx-time');   // 낮게 울리는 소리
+}
+
+function playIntroSound(id) {
+    const a = document.getElementById(id);
+    if (!a) return;
+    try { a.currentTime = 0; } catch (e) { /* 아직 못 받은 소리 */ }
+    a.play().catch(() => {});
+}
+
+function updateIntro(g, dt) {
+    const it = g.intro;
+    if (!it) return;
+    it.t += dt;
+    g.shake = Math.max(0, g.shake - dt * 0.0016);
+    if (!it.reduce && it.t < INTRO_LAND && it.t > 300) g.shake = Math.max(g.shake, 0.18);   // 땅울림
+    if (!it.reduce && !it.landed && it.t >= INTRO_LAND) {
+        it.landed = true;
+        playIntroSound('sfx-boss');
+        g.shake = 0.95;
+    }
+    if (it.t >= it.len) endBossIntro(g);
+}
+
+function endBossIntro(g) {
+    if (!g.intro) return;
+    g.intro = null;
+    if (g.state !== 'intro') return;
+    g.state = 'playing';
+    g.lastTime = performance.now();
+    resumeMusic();
+    showSidePanel();
+}
+
+function skipBossIntro(g) {
+    const it = g.intro;
+    if (!it || !it.skippable || it.t < 250) return;
+    if (!it.landed && !it.reduce) { it.landed = true; g.shake = 0.4; }
+    it.t = Math.max(it.t, it.len - 260);   // 바로 사라지기 시작
+}
+
+// 착지 전에는 보스를 위에서 떨어뜨려 그림 (0이면 제자리)
+function bossDropOffset(g, b) {
+    const it = g.intro;
+    if (!it || it.b !== b) return 0;
+    if (it.reduce) return 0;
+    if (it.t < INTRO_LAND - 450) return null;   // 아직 안 보임
+    const k = Math.min(1, (it.t - (INTRO_LAND - 450)) / 450);
+    const slow = k < 0.75 ? k / 0.75 * 0.55 : 0.55 + (k - 0.75) / 0.25 * 0.45;   // 처음엔 빠르게, 땅에 닿기 직전 느리게
+    return -(1 - slow) * (canvas.height * 0.9);
+}
+
+function drawBossIntro(g) {
+    const it = g.intro;
+    if (!it) return;
+    const W = canvas.width, Hh = canvas.height, b = it.b, t = it.t, len = it.len;
+    const out = Math.max(0, Math.min(1, (len - t) / 260));    // 끝날 때 사라지기
+    const inn = Math.min(1, t / 260);
+    const show = Math.min(inn, out);
+    // 어둡게
+    ctx.fillStyle = `rgba(5, 8, 20, ${0.38 * show})`;
+    ctx.fillRect(0, 0, W, Hh);
+    if (!it.reduce) {
+        // 예고: 떨어질 자리에 그림자가 커짐
+        if (t < INTRO_LAND) {
+            const k = Math.min(1, t / INTRO_LAND);
+            ctx.fillStyle = `rgba(0, 0, 0, ${0.25 + 0.4 * k})`;
+            ctx.beginPath(); ctx.ellipse(b.x, b.y + b.radius * 0.95, b.radius * (0.3 + 1.0 * k), b.radius * (0.08 + 0.22 * k), 0, 0, Math.PI * 2); ctx.fill();
+            if (Math.floor(t / 220) % 2 === 0) {
+                ctx.font = `${Math.round(40 * Math.max(0.7, g.scale))}px Jua, sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.fillStyle = '#fc8181';
+                ctx.fillText('⚠ 경고 ⚠', W / 2, Hh * 0.3);
+                ctx.textAlign = 'start';
+            }
+        }
+        // 착지 충격파
+        const s = t - INTRO_LAND;
+        if (s > 0 && s < 700) {
+            const k = s / 700;
+            [[0, 10, '#e9d8fd'], [0.12, 5, '#b794f4']].forEach(([lag, lw, col]) => {
+                const kk = Math.max(0, k - lag);
+                ctx.globalAlpha = (1 - kk) * 0.9;
+                ctx.strokeStyle = col;
+                ctx.lineWidth = lw;
+                ctx.beginPath(); ctx.ellipse(b.x, b.y + b.radius * 0.95, kk * W * 0.6, kk * W * 0.18, 0, 0, Math.PI * 2); ctx.stroke();
+            });
+            ctx.globalAlpha = 1;
+        }
+    }
+    // 이름표: 착지 뒤(동작 줄이기면 바로) 톡 나타나고, 들쭉날쭉한 에너지 막대가 하나씩 차오름
+    const p0 = it.reduce ? 0 : INTRO_LAND + 100;
+    if (t > p0) {
+        const k = Math.min(1, (t - p0) / 220);
+        const pop = it.reduce ? 1 : (k < 1 ? 0.7 + 0.45 * k : 1.15 - 0.15 * Math.min(1, (t - p0 - 220) / 150));
+        const cy = Hh * 0.68, sc = Math.max(0.7, g.scale);
+        ctx.save();
+        ctx.globalAlpha = Math.min(k, out);
+        ctx.translate(W / 2, cy);
+        ctx.scale(pop, pop);
+        const bw = Math.min(W * 0.86, 460 * sc), bh = 150 * sc;
+        ctx.fillStyle = 'rgba(26, 16, 46, 0.88)';
+        ctx.strokeStyle = '#b794f4';
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.roundRect ? ctx.roundRect(-bw / 2, -bh / 2, bw, bh, 18) : ctx.rect(-bw / 2, -bh / 2, bw, bh);
+        ctx.fill(); ctx.stroke();
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#d6bcfa';
+        ctx.font = `${Math.round(16 * sc)}px Jua, sans-serif`;
+        ctx.fillText(b.n > 1 ? `${b.n}번째 보스가 나타났어요!` : '보스가 나타났어요!', 0, -bh / 2 + 26 * sc);
+        ctx.fillStyle = '#fff';
+        ctx.font = `${Math.round(38 * sc)}px Jua, sans-serif`;
+        ctx.fillText('들쭉날쭉 보스', 0, -bh / 2 + 68 * sc);
+        // 에너지 막대
+        const n = b.tanks.length, colW = 26 * sc, gap = 14 * sc, maxH = 46 * sc, base = bh / 2 - 14 * sc;
+        const x0 = -((n * colW + (n - 1) * gap) / 2);
+        b.tanks.forEach((v, i) => {
+            const fill = Math.max(0, Math.min(1, (t - p0 - 200 - i * 160) / 260));
+            const h = maxH * v / TANK_MAX * fill;
+            ctx.fillStyle = '#2d3748';
+            ctx.fillRect(x0 + i * (colW + gap), base - maxH, colW, maxH);
+            ctx.fillStyle = '#4fd1c5';
+            ctx.fillRect(x0 + i * (colW + gap), base - h, colW, h);
+        });
+        ctx.restore();
+        ctx.textAlign = 'start';
+    }
+    // 위아래 검은 띠 (영화 화면처럼)
+    const bar = Hh * 0.1 * show;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, bar);
+    ctx.fillRect(0, Hh - bar, W, bar);
+    if (it.skippable && show > 0.5) {
+        ctx.font = '16px Jua, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillStyle = 'rgba(226, 232, 240, 0.85)';
+        ctx.fillText('화면을 누르면 넘어가요 ▶', W - 16, Hh - bar / 2 + 6);
+        ctx.textAlign = 'start';
+    }
+}
+
+function setupBossIntro() {
+    document.addEventListener('pointerdown', () => { if (game.state === 'intro') skipBossIntro(game); }, true);
+}
+
 // ---------- 그리기 ----------
 function drawBoss(g, b) {
+    const drop = bossDropOffset(g, b);
+    if (drop === null) return;   // 등장 연출에서 아직 떨어지기 전
+    if (drop) { ctx.save(); ctx.translate(0, drop); }
+    drawBossBody(g, b);
+    if (drop) ctx.restore();
+}
+
+function drawBossBody(g, b) {
     const fixedTint = g.gameTime < b.stunUntil;
     const wob = fixedTint ? Math.sin(g.gameTime / 60) * 3 : 0;
-    drawSpriteFit(imgBoss, b.x + wob, b.y, b.radius * 2.1, '#805ad5');
+    drawSpriteFit(b.ice ? imgBossFrozen : imgBoss, b.x + wob, b.y, b.radius * 2.1, '#805ad5');
+    drawIce(g, b);
     if (b.shield) {
         ctx.strokeStyle = '#d6bcfa';
         ctx.lineWidth = 5;

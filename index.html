@@ -851,8 +851,8 @@
     <audio id="sfx-fixed" src="sounds/boss_fixed.mp3" preload="auto"></audio>
     <audio id="sfx-tank" src="sounds/tank_move.mp3" preload="auto"></audio>
 
-  <script src="js/crew.js?v=0.038"></script>
-  <script src="js/boss.js?v=0.038"></script>
+  <script src="js/crew.js?v=0.040"></script>
+  <script src="js/boss.js?v=0.040"></script>
 
   <script>
             function formatTime(ms) {
@@ -1575,6 +1575,8 @@
         }
         const imgEnemy = loadSprite('images/robot.webp');
         const imgEnemyFixed = loadSprite('images/robot_fixed.webp');
+        const imgEnemyFrozen = loadSprite(`images/robot_frozen.webp?v=${window.VERSION}`);
+        const imgBossFrozen = loadSprite(`images/boss_frozen.webp?v=${window.VERSION}`);
         const imgBoss = loadSprite(`images/boss.webp?v=${window.VERSION}`);
         const imgBossFixed = loadSprite(`images/boss_fixed.webp?v=${window.VERSION}`);
         let imgHero = loadSprite(`images/hero_${selectedCrewId()}.webp?v=${window.VERSION}`);
@@ -1714,7 +1716,7 @@
                 this.player.x += dx;
                 this.player.y += dy;
                 const c = this.crew;
-                [this.enemies, this.bullets, this.particles, this.floatingTexts, this.orbs, this.rescues, c.rings, this.waves || [],
+                [this.enemies, this.bullets, this.particles, this.floatingTexts, this.orbs, this.rescues, c.rings, this.waves || [], c.shards, c.frost,
                  ...(this.waves || []).map(w => w.sparks),
                  ...c.walls.map(w => w.points), c.beams.map(b => b.p), c.beams.map(b => b.q), c.drone ? [c.drone] : []]
                     .forEach(list => list.forEach(o => { o.x += dx; o.y += dy; }));
@@ -1789,6 +1791,14 @@
             }
 
             loop(timestamp) {
+                if (this.state === 'intro') {   // 보스 등장 연출: 전투와 타이머는 멈추고 연출만 진행
+                    const d = Math.max(0, Math.min(50, timestamp - this.lastTime));
+                    this.lastTime = timestamp;
+                    updateIntro(this, d);
+                    this.draw();
+                    this.scheduleFrame();
+                    return;
+                }
                 if (this.state === 'paused' || this.state === 'gameover') {
                     if(this.state === 'paused') this.scheduleFrame(); // 멈춰있어도 루프는 유지 (재개 위해)
                 return;
@@ -1969,16 +1979,14 @@
                 // 치우친 로봇
                 this.enemies.forEach(e => {
                     if (e.boss) { drawBoss(this, e); return; }
-                    drawSpriteFit(imgEnemy, e.x, e.y, e.radius * 2.1, '#b83280');
-                    if (e.frozenUntil > this.gameTime) {
-                        ctx.fillStyle = 'rgba(157, 236, 249, 0.45)';
-                        ctx.beginPath(); ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2); ctx.fill();
-                    }
+                    drawSpriteFit(e.ice ? imgEnemyFrozen : imgEnemy, e.x, e.y, e.radius * 2.1, '#b83280');
+                    drawIce(this, e);
                     // 남은 바이러스
                     ctx.fillStyle = '#1a202c'; ctx.fillRect(e.x - 17, e.y - e.radius - 10, 34, 6);
                     ctx.fillStyle = '#b794f4'; ctx.fillRect(e.x - 17, e.y - e.radius - 10, 34 * Math.max(0, e.hp / e.maxHp), 6);
                 });
                 drawOrbs(this);
+                drawIceBits(this);
 
                 // Bullets
                 ctx.fillStyle = '#4fd1c5';
@@ -2018,6 +2026,7 @@
                 });
                 ctx.globalAlpha = 1;
                 ctx.restore();
+                drawBossIntro(this);
             }
 
             spawnEnemy() {
@@ -2103,6 +2112,7 @@
             killEnemy(idx) {
                 const e = this.enemies[idx];
                 if (!e) return;
+                if (e.ice) shatterIce(this, e);   // 얼음에 갇힌 채 고쳐지면 얼음이 깨짐
                 for (let i = 0; i < (e.boss ? 30 : 6); i++) this.particles.push({
                     x: e.x, y: e.y, vx: (Math.random() - 0.5) * (e.boss ? 12 : 5), vy: (Math.random() - 0.5) * (e.boss ? 12 : 5),
                     life: e.boss ? 700 : 350, color: i % 2 ? '#68d391' : '#f6e05e', size: e.boss ? 5 : 3
@@ -2267,7 +2277,7 @@
             }
 
             saveGame() {
-                if (this.state !== 'playing' && this.state !== 'paused') return;
+                if (this.state !== 'playing' && this.state !== 'paused' && this.state !== 'intro') return;
 
                 const saveData = {
                     gameTime: this.gameTime,
@@ -2362,6 +2372,7 @@
         let game = new Game();
         setupCrewGestures();
         setupTanks();
+        setupBossIntro();
         checkCrewUnlocks(true);
         renderCrewPicker();
 

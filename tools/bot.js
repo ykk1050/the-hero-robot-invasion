@@ -25,6 +25,7 @@ async () => {
     if (game.player.level !== before + 1) { out.막힘 = '레벨이 안 오름'; return out; }
     out.맞힘++;
     await wait(60);
+    for (let k = 0; k < 50 && game.state === 'intro'; k++) await wait(100);   // 보스 등장 연출이 끝날 때까지
     const boss = bossOf(game);
     if (boss && boss.shield) {
       out.보스 = (out.보스 || 0) + 1;

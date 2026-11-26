@@ -82,7 +82,7 @@ function renderCrewPicker() {
 
 // ---------- 전투 중 대원 상태 ----------
 function newCrewState(id) {
-    return { id, energy: ENERGY_COST, walls: [], beams: [], rings: [], drone: null, slowUntil: 0, gesture: null, hintAt: 0 };
+    return { id, energy: ENERGY_COST, walls: [], beams: [], rings: [], drone: null, slowUntil: 0, gesture: null, hintAt: 0, shards: [], frost: [] };
 }
 
 // 기술 한 번의 세기: 강화를 할수록 기술도 세짐
@@ -158,10 +158,14 @@ const CREW_SKILLS = {
     ice(g, at) {
         const r = ICE_R * g.scale;
         g.crew.rings.push({ x: at.x, y: at.y, r, life: 500, color: '#9decf9' });
+        for (let i = 0; i < 26; i++) {   // 찍은 자리에서 눈꽃이 퍼짐
+            const a = i / 26 * Math.PI * 2 + Math.random() * 0.2, sp = 4 + Math.random() * 4;
+            g.crew.frost.push({ x: at.x, y: at.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 550 + Math.random() * 250, size: 4 + Math.random() * 4 });
+        }
         const dmg = skillPower(g) * 2.8;
         [...g.enemies].forEach(e => {
             if (Math.hypot(e.x - at.x, e.y - at.y) > r + e.radius * 0.5) return;
-            e.frozenUntil = g.gameTime + (e.boss ? 2500 : 6000);
+            encaseInIce(g, e, e.boss ? 2500 : 6000);
             g.damageEnemy(e, dmg);
         });
         playSound('sfx-ice');
@@ -204,6 +208,7 @@ function blockByWalls(g, e) {
 
 function updateCrew(g, dt) {
     const s = g.crew;
+    updateIce(g, dt);
     s.walls = s.walls.filter(w => w.until > g.gameTime);
     s.beams.forEach(b => { b.life -= dt; });
     s.beams = s.beams.filter(b => b.life > 0);
@@ -246,6 +251,169 @@ function updateCrew(g, dt) {
         d.shot = { x: best.x, y: best.y, life: 120 };
         g.damageEnemy(best, skillPower(g) * 0.42);
     }
+}
+
+// ---------- 얼음 감옥 ----------
+// 찍은 자리에서 서리가 퍼지고, 닿은 로봇은 각진 얼음덩어리에 갇힘. 풀리기 직전엔 금이 가며 떨리다가 조각으로 깨짐.
+const ICE_APPEAR = 220, ICE_CRACK = 1300;
+
+function encaseInIce(g, e, ms) {
+    const until = g.gameTime + ms;
+    if (e.ice && e.frozenUntil > g.gameTime) { e.frozenUntil = Math.max(e.frozenUntil, until); return; }   // 이미 갇혀 있으면 시간만 늘림
+    e.frozenUntil = until;
+    const n = 9;
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+        const a = -Math.PI / 2 + i / n * Math.PI * 2 + (Math.random() - 0.5) * 0.35;
+        pts.push([a, 0.98 + Math.random() * 0.3 + (Math.abs(Math.sin(a)) > 0.85 && Math.sin(a) < 0 ? 0.18 : 0)]);   // 위쪽은 뾰족하게
+    }
+    const cracks = [];
+    for (let k = 0; k < 4; k++) {   // 가운데 근처에서 바깥으로 뻗는 금
+        let a = Math.random() * Math.PI * 2, r = 0.1, line = [[a, r]];
+        for (let j = 0; j < 4; j++) { a += (Math.random() - 0.5) * 0.7; r += 0.22 + Math.random() * 0.1; line.push([a, Math.min(1, r)]); }
+        cracks.push(line);
+    }
+    e.ice = { at: g.gameTime, pts, cracks, tilt: (Math.random() - 0.5) * 0.25 };
+    for (let i = 0; i < 10; i++) {   // 얼어붙는 순간 튀는 서리
+        const a = Math.random() * Math.PI * 2, sp = 2 + Math.random() * 3;
+        g.crew.frost.push({ x: e.x, y: e.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 400 + Math.random() * 200, size: 3 + Math.random() * 3 });
+    }
+}
+
+// 얼음이 깨지며 조각이 튐
+function shatterIce(g, e) {
+    if (!e.ice) return;
+    const R = e.radius * (e.boss ? 1.2 : 1.15);
+    e.ice.pts.forEach(([a, k], i) => {
+        const [b, m] = e.ice.pts[(i + 1) % e.ice.pts.length];
+        const x1 = Math.cos(a) * R * k, y1 = Math.sin(a) * R * k, x2 = Math.cos(b) * R * m, y2 = Math.sin(b) * R * m;
+        const mid = (a + b) / 2, sp = 3 + Math.random() * 3;
+        g.crew.shards.push({ x: e.x, y: e.y, pts: [[0, 0], [x1, y1], [x2, y2]].map(([x, y]) => [x * 0.55, y * 0.55]),
+            vx: Math.cos(mid) * sp, vy: Math.sin(mid) * sp - 2.5, rot: 0, vr: (Math.random() - 0.5) * 0.3, life: 750 });
+    });
+    for (let i = 0; i < 14; i++) {
+        const a = Math.random() * Math.PI * 2, sp = 1 + Math.random() * 4;
+        g.crew.frost.push({ x: e.x, y: e.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 500, size: 2 + Math.random() * 3 });
+    }
+    e.ice = null;
+    g.crew.shards = g.crew.shards.slice(-120);
+    playSound('sfx-ice');
+}
+
+function updateIce(g, dt) {
+    const s = g.crew, f = dt * 0.06;
+    g.enemies.forEach(e => { if (e.ice && g.gameTime >= e.frozenUntil) shatterIce(g, e); });
+    s.shards.forEach(p => { p.life -= dt; p.x += p.vx * f; p.y += p.vy * f; p.vy += 0.25 * f; p.rot += p.vr * f; });
+    s.shards = s.shards.filter(p => p.life > 0);
+    s.frost.forEach(p => { p.life -= dt; p.x += p.vx * f; p.y += p.vy * f; p.vx *= 0.96; p.vy *= 0.96; });
+    s.frost = s.frost.filter(p => p.life > 0).slice(-200);
+}
+
+function iceShape(e, R, grow) {
+    ctx.beginPath();
+    e.ice.pts.forEach(([a, k], i) => {
+        const x = e.x + Math.cos(a) * R * k * grow, y = e.y + Math.sin(a) * R * k * grow;
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    });
+    ctx.closePath();
+}
+
+// 로봇 위에 얼음덩어리를 그림
+function drawIce(g, e) {
+    if (!e.ice) return;
+    const t = g.gameTime - e.ice.at, left = e.frozenUntil - g.gameTime;
+    const k = Math.min(1, t / ICE_APPEAR);
+    const grow = k < 1 ? 1 + 0.25 * Math.sin(k * Math.PI) - 0.25 * (1 - k) : 1;   // 톡 커졌다 자리잡기
+    const R = e.radius * (e.boss ? 1.2 : 1.15);
+    const shake = left < 600 ? Math.sin(g.gameTime / 25) * 2.5 : 0;
+    ctx.save();
+    ctx.translate(shake, 0);
+    // 얼음 몸통: 위는 밝고 아래는 푸르게
+    const grad = ctx.createLinearGradient(e.x - R, e.y - R, e.x + R, e.y + R);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 0.55)');
+    grad.addColorStop(0.45, 'rgba(178, 235, 255, 0.32)');
+    grad.addColorStop(1, 'rgba(99, 179, 237, 0.45)');
+    iceShape(e, R, grow);
+    ctx.fillStyle = grad;
+    ctx.fill();
+    // 면이 꺾이는 선 (각진 얼음처럼)
+    ctx.save();
+    iceShape(e, R, grow);
+    ctx.clip();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.lineWidth = 1.5;
+    const cx = e.x - R * 0.15, cy = e.y - R * 0.2;
+    e.ice.pts.forEach(([a, m], i) => {
+        if (i % 2) return;
+        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(e.x + Math.cos(a) * R * m, e.y + Math.sin(a) * R * m); ctx.stroke();
+    });
+    // 얼어붙는 순간 비스듬한 빛이 한 번 쓸고 지나감
+    if (t < 700) {
+        const p = t / 700, bx = e.x - R * 1.4 + p * R * 2.8;
+        const glint = ctx.createLinearGradient(bx - 30, e.y - R, bx + 30, e.y + R);
+        glint.addColorStop(0, 'rgba(255,255,255,0)'); glint.addColorStop(0.5, 'rgba(255,255,255,0.75)'); glint.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = glint;
+        ctx.fillRect(e.x - R * 1.5, e.y - R * 1.5, R * 3, R * 3);
+    }
+    // 반짝이는 윗면
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.beginPath(); ctx.ellipse(e.x - R * 0.35, e.y - R * 0.55, R * 0.28, R * 0.09, -0.5, 0, Math.PI * 2); ctx.fill();
+    // 풀리기 직전 금이 감
+    if (left < ICE_CRACK) {
+        const c = 1 - left / ICE_CRACK;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.lineWidth = 2;
+        e.ice.cracks.forEach(line => {
+            const upto = Math.max(1, Math.round(c * (line.length - 1)) + 1);
+            ctx.beginPath();
+            line.slice(0, upto).forEach(([a, r], i) => {
+                const x = e.x + Math.cos(a) * R * r, y = e.y + Math.sin(a) * R * r;
+                i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+            });
+            ctx.stroke();
+        });
+    }
+    ctx.restore();
+    // 테두리
+    iceShape(e, R, grow);
+    ctx.strokeStyle = 'rgba(235, 248, 255, 0.95)';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    // 발밑 서리
+    ctx.fillStyle = 'rgba(235, 248, 255, 0.4)';
+    ctx.beginPath(); ctx.ellipse(e.x, e.y + R * 0.98, R * 0.85, R * 0.12, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+}
+
+function drawSnowflake(x, y, r) {
+    ctx.beginPath();
+    for (let i = 0; i < 3; i++) {
+        const a = i * Math.PI / 3;
+        ctx.moveTo(x - Math.cos(a) * r, y - Math.sin(a) * r);
+        ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+    }
+    ctx.stroke();
+}
+
+// 깨진 조각과 서리 가루
+function drawIceBits(g) {
+    const s = g.crew;
+    s.shards.forEach(p => {
+        ctx.save();
+        ctx.globalAlpha = Math.min(1, p.life / 300);
+        ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+        ctx.beginPath(); p.pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
+        ctx.fillStyle = 'rgba(190, 235, 255, 0.75)'; ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)'; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.restore();
+    });
+    ctx.strokeStyle = '#e6fffa';
+    ctx.lineWidth = 1.5;
+    s.frost.forEach(p => {
+        ctx.globalAlpha = Math.min(1, p.life / 250);
+        drawSnowflake(p.x, p.y, p.size);
+    });
+    ctx.globalAlpha = 1;
 }
 
 // ---------- 구조 파동 (상점 아이템) ----------
