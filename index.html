@@ -575,6 +575,32 @@
         .notice-banner > b { flex-shrink: 0; color: #f6ad55; font-weight: normal; font-size: 1.05rem; }
         .notice-banner span b { color: #fbd38d; font-weight: normal; }
         #start-screen .notice-banner { margin: 0; }
+        #notice-modal {
+            position: fixed; inset: 0; z-index: 3600; display: none; align-items: center; justify-content: center;
+            padding: 16px; background: rgba(5, 8, 20, 0.72);
+        }
+        #notice-modal.show { display: flex; }
+        .notice-card {
+            width: min(460px, 100%); max-height: calc(100% - 16px); overflow-y: auto; padding: 22px 22px 18px; border-radius: 18px;
+            background: linear-gradient(160deg, #2d3748, #1a202c); border: 3px solid #f6ad55; box-shadow: 0 0 40px -8px rgba(246, 173, 85, 0.6);
+            text-align: center; color: #e2e8f0; animation: notice-pop 0.28s ease-out;
+        }
+        @keyframes notice-pop { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        @media (prefers-reduced-motion: reduce) { .notice-card { animation: none; } }
+        .notice-title { font-size: 1.6rem; color: #f6ad55; margin-bottom: 10px; }
+        .notice-card p { margin: 0 0 10px; font-size: 1.12rem; line-height: 1.6; word-break: keep-all; }
+        .notice-card p b { color: #fbd38d; font-weight: normal; }
+        .notice-card .notice-sub { font-size: 0.98rem; color: #a0aec0; }
+        .notice-check {
+            display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 12px; margin: 4px 0 10px;
+            font-size: 1.05rem; color: #cbd5e0; cursor: pointer; user-select: none;
+        }
+        .notice-check input { width: 26px; height: 26px; margin: 0; accent-color: #f6ad55; cursor: pointer; }
+        .notice-ok {
+            display: block; width: 100%; min-height: 52px; border: none; border-radius: 14px; font-family: 'Jua', sans-serif; font-size: 1.35rem;
+            color: #1a202c; background: linear-gradient(90deg, #f6d365, #fda085); cursor: pointer;
+        }
+        .notice-ok:active { transform: translateY(2px); }
         @media (max-width: 560px) { .notice-banner { font-size: 0.82rem; padding: 6px 10px; gap: 6px; } }
         @media (max-height: 640px) and (min-width: 561px) { #start-screen .notice-banner { font-size: 0.85rem; padding: 5px 12px; } }
 
@@ -760,13 +786,24 @@
         <h1>평균의 수호자</h1>
         <p class="story">우주 로봇들이 <b>치우침 바이러스</b>에 걸려 에너지가 한쪽으로 쏠렸어요.<br>
             평균의 힘으로 에너지를 <b>고르게</b> 되돌려 로봇들을 구해 주세요!</p>
-        <div class="notice-banner"><b>📢 예고</b><span>이번 주말(11월 28~29일) <b>밸런스 패치</b>가 있어요! 강화 균형을 새로 맞추고 <b>새 시즌 랭킹</b>이 시작돼요. 지금까지의 기록은 시즌 1로 마무리되고, 새 시즌은 모두 0부터 겨뤄요.</span></div>
         <div id="crew-picker"></div>
         <div id="crew-guide"></div>
         <button class="start-btn" onclick="checkNameAndStart()">작전 개시</button>
         <div class="credit-line">
             Created by gamtudyssam using AI · <span class="version-text"></span>
             · <a href="credits.html" target="_blank" rel="noopener">출처와 라이선스</a>
+        </div>
+    </div>
+
+    <!-- 공지 팝업 (시작 화면에서 한 번 뜸, '다시 보지 않기' 가능) -->
+    <div id="notice-modal" data-notice="season2-2026-11" role="dialog" aria-modal="true" aria-labelledby="notice-title">
+        <div class="notice-card">
+            <div class="notice-title" id="notice-title">📢 알려 드려요!</div>
+            <p>이번 주말(<b>11월 28~29일</b>) <b>밸런스 패치</b>가 있어요.<br>
+               강화 균형을 새로 맞추고 <b>새 시즌 랭킹</b>이 시작돼요.</p>
+            <p class="notice-sub">지금까지의 기록은 시즌 1로 마무리되고,<br>새 시즌은 모두 0부터 겨뤄요.</p>
+            <label class="notice-check"><input type="checkbox" id="notice-hide"> 다시 보지 않기</label>
+            <button type="button" class="notice-ok" onclick="closeNotice()">확인</button>
         </div>
     </div>
 
@@ -2384,6 +2421,19 @@
 
         // === 게임 인스턴스 ===
         let game = new Game();
+
+        // 공지 팝업: '다시 보지 않기'를 고르면 이 공지는 이 기기에서 다시 뜨지 않음 (새 공지는 data-notice를 바꾸면 다시 뜸)
+        function closeNotice() {
+            const m = document.getElementById('notice-modal');
+            if (document.getElementById('notice-hide').checked) store.setItem('noticeHidden', m.dataset.notice);
+            m.classList.remove('show');
+        }
+        (function showNotice() {
+            const m = document.getElementById('notice-modal');
+            if (store.getItem('noticeHidden') === m.dataset.notice) return;
+            m.classList.add('show');
+            m.addEventListener('pointerdown', ev => { if (ev.target === m) closeNotice(); });   // 바깥을 눌러도 닫힘
+        })();
         setupCrewGestures();
         setupTanks();
         setupBossIntro();
