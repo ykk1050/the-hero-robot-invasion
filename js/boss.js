@@ -65,7 +65,7 @@ function updateBoss(g, dt) {
         if (g.crew.walls.some(w => w.points.some((p, i) => i && distToSegment(o.x, o.y, w.points[i - 1], p).d < 16))) { o.life = 0; return; }
         if (Math.hypot(o.x - g.player.x, o.y - g.player.y) < 55 * g.scale) {
             o.life = 0;
-            if (!g.isInvincible) { g.player.hp -= 6; g.shakeBy(0.3); }
+            if (!g.isInvincible) { g.player.hp -= (o.dmg || 6) * damageTaken(g.player); g.shakeBy(o.small ? 0.12 : 0.3); }
         }
     });
     g.orbs = g.orbs.filter(o => o.life > 0);
@@ -404,9 +404,10 @@ function drawBossBody(g, b) {
 
 function drawOrbs(g) {
     g.orbs.forEach(o => {
-        ctx.fillStyle = 'rgba(183, 148, 244, 0.4)';
-        ctx.beginPath(); ctx.arc(o.x, o.y, 18 * g.scale + 4, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#e9d8fd';
-        ctx.beginPath(); ctx.arc(o.x, o.y, 9 * g.scale + 3, 0, Math.PI * 2); ctx.fill();
+        const k = o.small ? 0.6 : 1;
+        ctx.fillStyle = o.small ? 'rgba(252, 129, 129, 0.45)' : 'rgba(183, 148, 244, 0.4)';
+        ctx.beginPath(); ctx.arc(o.x, o.y, (18 * g.scale + 4) * k, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = o.small ? '#fed7d7' : '#e9d8fd';
+        ctx.beginPath(); ctx.arc(o.x, o.y, (9 * g.scale + 3) * k, 0, Math.PI * 2); ctx.fill();
     });
 }

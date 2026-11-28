@@ -677,6 +677,7 @@
                             ⚡ 연사속도: <span id="stat-spd">1.25</span>/s <br>
                             🏹 발사체수: <span id="stat-cnt">1</span> <br>
                             👾 적 공격력: <span id="enemy-dmg" style="color:#f56565">30/초</span> <br>
+                            📊 내 강화 평균: <span id="up-avg" style="color:#fbd38d">아직 없음</span> <br>
                             🤖 구한 로봇: <span id="rescue-count" style="color:#68d391">0</span> <br>
                             👑 보스: <span id="boss-info" style="color:#d6bcfa">정답 5개 뒤</span> <br>
                             ⏳ 최장생존: <span id="max-time" style="color:#ffd700">00:00</span>
@@ -902,8 +903,9 @@
     <audio id="sfx-fixed" src="sounds/boss_fixed.mp3" preload="auto"></audio>
     <audio id="sfx-tank" src="sounds/tank_move.mp3" preload="auto"></audio>
 
-  <script src="js/crew.js?v=0.040"></script>
-  <script src="js/boss.js?v=0.040"></script>
+  <script src="js/crew.js?v=0.043"></script>
+  <script src="js/boss.js?v=0.043"></script>
+  <script src="js/robots.js?v=0.043"></script>
 
   <script>
             function formatTime(ms) {
@@ -1630,6 +1632,7 @@
         const imgBossFrozen = loadSprite(`images/boss_frozen.webp?v=${window.VERSION}`);
         const imgBoss = loadSprite(`images/boss.webp?v=${window.VERSION}`);
         const imgBossFixed = loadSprite(`images/boss_fixed.webp?v=${window.VERSION}`);
+        Object.keys(ROBOT_TYPES).forEach(robotImg);   // 로봇 4종 그림도 미리 불러 둠 (처음 나올 때 빈 동그라미 방지)
         let imgHero = loadSprite(`images/hero_${selectedCrewId()}.webp?v=${window.VERSION}`);
         // 높이에 맞춰 원래 비율대로 그림 (x, y는 가운데)
         function drawSpriteFit(img, x, y, h, color) {
@@ -1668,8 +1671,10 @@
                     damage: 25,
                     fireRate: 800,
                     lastFire: 0,
-                    projectileCount: 1
+                    projectileCount: 1,
+                    ups: { d: 0, h: 0, f: 0, m: 0 }   // 강화를 고른 횟수 (공격·체력·연사·다중)
                 };
+                this.seenTypes = {};   // 이 판에서 이미 나온 로봇 종류
 
                 this.gold = 0;
                 this.skills = { bomb: 0, heal: 0, shield: 0 };
@@ -1763,7 +1768,7 @@
                 const dy = canvas.height / 2 - this.player.y;
                 // 용사·적·총알 크기: 기기 종류와 상관없이 전투 화면이 작을수록 조금 작게 (갤럭시 탭과 아이패드가 똑같음)
                 this.scale = Math.max(0.45, Math.min(1, Math.min(canvas.width, canvas.height) / 720));
-                this.enemies.forEach(e => { e.radius = (e.boss ? 95 : 50) * this.scale; });
+                this.enemies.forEach(e => { e.radius = (e.boss ? 95 : (ROBOT_TYPES[e.type] || ROBOT_TYPES.normal).radius) * this.scale; });
                 this.player.x += dx;
                 this.player.y += dy;
                 const c = this.crew;
@@ -1886,19 +1891,7 @@
                 // 2. 중반(240초~): 스폰 속도 1.0초 -> 0.5초
                 // 3. 후반(480초~): 스폰 속도 0.3초 (물량 폭주)
 
-                let currentSpawnRate = 2000;
-                if (seconds < 240) {
-                    // 4분까지는 천천히 빨라짐
-                    currentSpawnRate = 2000 - (seconds * 4); // 240초일 때 약 1000ms
-                } else if (seconds < 480) {
-                    // 4분~8분: 조금 더 빨라짐
-                    currentSpawnRate = 1000 - ((seconds - 240) * 2); // 480초일 때 약 500ms
-                } else {
-                    // 8분 이후: 극한
-                    currentSpawnRate = 500 - ((seconds - 480) * 3);
-                    if (currentSpawnRate < 300) currentSpawnRate = 300;
-                }
-                this.spawnRate = currentSpawnRate;
+                this.spawnRate = spawnInterval(seconds);   // robots.js의 BAL로 맞춘 출현 간격
 
                 // 적 스폰
                 if (bossOf(this)) this.spawnRate *= 1.7;   // 보스가 있을 때는 작은 로봇이 덜 나옴
@@ -1906,8 +1899,8 @@
                     this.spawnEnemy();
 
                     // 4분 이후부터 물량 폭주 확률 생김 (점진적 증가)
-                    if (seconds > 240 && Math.random() < 0.1) this.spawnEnemy();
-                    if (seconds > 480 && Math.random() < 0.2) this.spawnEnemy();
+                    if (seconds > 240 && Math.random() < BAL.extra1) this.spawnEnemy();
+                    if (seconds > 480 && Math.random() < BAL.extra2) this.spawnEnemy();
 
                     this.lastSpawn = this.gameTime;
                 }
@@ -1935,7 +1928,7 @@
                         const bulletRadius = 8 * this.scale;
                         if (dist < e.radius + bulletRadius) {
                             this.bullets.splice(i, 1);
-                            this.damageEnemy(e, this.player.damage);
+                            this.damageEnemy(e, b.dmg || this.player.damage);
                     break;
             }
                     }
@@ -1945,7 +1938,7 @@
                 for (let i = this.enemies.length - 1; i >= 0; i--) {
                     let e = this.enemies[i];
                     let angle = Math.atan2(this.player.y - e.y, this.player.x - e.x);
-                    const pace = enemyPace(this, e) * (e.boss ? bossPace(this, e) : 1);
+                    const pace = enemyPace(this, e) * (e.boss ? bossPace(this, e) : robotPace(this, e));
                     e.x += Math.cos(angle) * e.speed * pace * dt * 0.06;
                     e.y += Math.sin(angle) * e.speed * pace * dt * 0.06;
 
@@ -1955,7 +1948,7 @@
                     if (dist < playerHitRadius + e.radius) {
                         if (!this.isInvincible && !(e.frozenUntil > this.gameTime) && !(e.boss && this.gameTime < e.stunUntil)) {
                             // 닿아 있는 적 하나가 1초에 30 (주사율이 달라도 같음)
-                            this.player.hp -= (e.boss ? 0.05 : 0.03) * dt;
+                            this.player.hp -= (e.boss ? 0.05 : 0.03) * dt * damageTaken(this.player);
                         }
                     }
                 }
@@ -1963,6 +1956,7 @@
                 updateCrew(this, dt);
                 updateBoss(this, dt);
                 updateWaves(this, dt);
+                updateRobots(this);
                 if (this.player.hp <= 0) { this.player.hp = 0; this.updateHUD(); this.gameOver(); return; }
 
                 // 고쳐진 로봇이 손을 흔들며 떠남
@@ -2030,11 +2024,7 @@
                 // 치우친 로봇
                 this.enemies.forEach(e => {
                     if (e.boss) { drawBoss(this, e); return; }
-                    drawSpriteFit(e.ice ? imgEnemyFrozen : imgEnemy, e.x, e.y, e.radius * 2.1, '#b83280');
-                    drawIce(this, e);
-                    // 남은 바이러스
-                    ctx.fillStyle = '#1a202c'; ctx.fillRect(e.x - 17, e.y - e.radius - 10, 34, 6);
-                    ctx.fillStyle = '#b794f4'; ctx.fillRect(e.x - 17, e.y - e.radius - 10, 34 * Math.max(0, e.hp / e.maxHp), 6);
+                    drawRobot(this, e);
                 });
                 drawOrbs(this);
                 drawIceBits(this);
@@ -2097,8 +2087,8 @@
                 // 4분 이후부터 체력 증가 시작
 
                 let timeHpBonus = 0;
-                if (seconds > 240) {
-                    timeHpBonus = (seconds - 240) * 0.5; // 4분 이후 2초당 1 증가
+                if (seconds > BAL.lateFrom) {
+                    timeHpBonus = (seconds - BAL.lateFrom) * BAL.timeHp; // 시간이 지나면 체력이 늘어남 (robots.js의 BAL)
                 }
 
                 // 레벨에 따른 체력 증가 (사용자가 강해진 만큼 적도 강해짐)
@@ -2108,13 +2098,12 @@
 
                 // 속도: 4분까지는 느림(1.0~1.5), 그 이후 점차 빨라짐
                 let baseSpeed = 1.0;
-                if (seconds > 240) baseSpeed += (seconds - 240) * 0.005;
+                if (seconds > BAL.lateFrom) baseSpeed += (seconds - BAL.lateFrom) * BAL.timeSpeed;
 
-                const speed = Math.min(4.0, baseSpeed + Math.random() * 0.5);
+                const speed = Math.min(BAL.maxSpeed, baseSpeed + Math.random() * 0.5);
 
                 // 적 크기 (모바일 안드로이드에서는 1/3 축소)
-                const radius = 50 * this.scale;
-                this.enemies.push({ x, y, hp, maxHp: hp, radius, speed: speed });
+                makeRobot(this, x, y, hp, speed);   // 로봇 종류는 robots.js에서 정함
             }
 
             fireBullet() {
@@ -2133,9 +2122,12 @@
                 const spread = 0.2;
                 const startAngle = angle - (spread*(count-1))/2;
 
+                const mid = Math.floor((count - 1) / 2);
                 for(let i=0; i<count; i++){
                     let th = startAngle + spread*i;
-                    this.bullets.push({ x: this.player.x, y: this.player.y, vx: Math.cos(th)*12, vy: Math.sin(th)*12 });
+                    // 가운데 한 발은 제 세기, 다중 사격으로 늘어난 발은 70%
+                    const dmg = this.player.damage * (i === mid ? 1 : 0.7);
+                    this.bullets.push({ x: this.player.x, y: this.player.y, vx: Math.cos(th)*12, vy: Math.sin(th)*12, dmg });
                 }
                 const now = performance.now();
                 if (now - this.shotSoundAt >= 150) {
@@ -2153,8 +2145,9 @@
                     if (this.gameTime > (e.blockAt || 0)) { e.blockAt = this.gameTime + 700; this.floatingTexts.push({ x: e.x - 30, y: e.y, text: '방어막!', life: 600, color: '#d6bcfa' }); }
                     return;
                 }
-                e.hp -= dmg;
-                this.showDamage(e.x, e.y, Math.round(dmg));
+                const amount = hitAmount(e, dmg);   // 철갑은 덜 아픔
+                e.hp -= amount;
+                this.showDamage(e.x, e.y, Math.round(amount));
                 if (e.boss) bossHit(this, e);
                 if (e.hp <= 0) this.killEnemy(this.enemies.indexOf(e));
             }
@@ -2208,6 +2201,7 @@
                 document.getElementById('stat-cnt').innerText = this.player.projectileCount;
                 document.getElementById('enemy-dmg').innerText = "30/초";
                 document.getElementById('rescue-count').innerText = this.stats.rescued || 0;
+                document.getElementById('up-avg').innerText = upgradeAverageText(this.player);
                 document.getElementById('boss-info').innerText = bossOf(this) ? '나타났어요!' : `정답 ${Math.max(1, this.nextBossAt - this.stats.correct)}개 뒤`;
 
                 // 학습 통계 표시 (누적)
@@ -2343,7 +2337,7 @@
                     // 적은 용사와의 거리로 저장 (화면 크기가 달라져도 같은 위치)
                     enemies: this.enemies.slice(0, 200).map(e => ({
                         dx: Math.round(e.x - this.player.x), dy: Math.round(e.y - this.player.y),
-                        hp: e.hp, maxHp: e.maxHp, speed: e.speed,
+                        hp: e.hp, maxHp: e.maxHp, speed: e.speed, type: e.type || 'normal', armor: e.armor || 0,
                         ...(e.boss ? { boss: true, n: e.n, shield: e.shield, phase: e.phase, phases: e.phases, tanks: e.tanks, first: e.first } : {})
                     })),
                     crew: this.crew.id,
@@ -2390,7 +2384,8 @@
                     this.ticketAt = data.ticketAt || 0;
                     this.enemies = (Array.isArray(data.enemies) ? data.enemies : [])
                         .filter(e => num(e, ['dx', 'dy', 'hp', 'maxHp', 'speed']))
-                        .map(e => ({ x: this.player.x + e.dx, y: this.player.y + e.dy, hp: e.hp, maxHp: e.maxHp, radius: 50 * this.scale, speed: e.speed, ...loadedBoss(e) }));
+                        .map(e => ({ x: this.player.x + e.dx, y: this.player.y + e.dy, hp: e.hp, maxHp: e.maxHp, type: ROBOT_TYPES[e.type] ? e.type : 'normal', armor: Number.isFinite(e.armor) ? e.armor : 0, shotAt: this.gameTime + 2000,
+                                       radius: (ROBOT_TYPES[e.type] || ROBOT_TYPES.normal).radius * this.scale, speed: e.speed, ...loadedBoss(e) }));
                     this.enemies.forEach(e => { if (e.boss) e.radius = 95 * this.scale; });
                     updateCrewGauge(this);
 
@@ -2527,17 +2522,13 @@
             upgradeArea.innerHTML = '';
             showSidePanel();
 
-            const opts = [
-                { name: '공격력 +10', apply: () => game.player.damage += 10 },
-                { name: 'HP 회복 & 최대 +50', apply: () => { game.player.maxHp+=50; game.player.hp=game.player.maxHp; } },
-                { name: '연사력 +15%', apply: () => game.player.fireRate *= 0.85 },
-                { name: '다중 사격 +1', apply: () => game.player.projectileCount++ }
-            ];
+            // 강화마다 잘 통하는 로봇이 다름 (robots.js)
+            const opts = ['d', 'h', 'f', 'm'].map(k => ({ name: UPGRADES[k].name, desc: UPGRADES[k].hint, apply: () => applyUpgrade(game, k) }));
 
             opts.forEach(opt => {
                 let div = document.createElement('div');
                 div.className = 'upgrade-card';
-                div.innerHTML = `<div class="upgrade-title">${opt.name}</div>`;
+                div.innerHTML = `<div class="upgrade-title">${opt.name}</div><div class="upgrade-desc">${opt.desc}</div>`;
                 div.onclick = () => {
                     if (!game.rewardOpen || game.state !== 'playing') return;   // 한 번만, 전투 중에만
                     opt.apply();
